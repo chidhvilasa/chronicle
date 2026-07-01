@@ -58,8 +58,6 @@
     the app still works if you start the server yourself
     (`cd server && uvicorn src.main:app --port 7823`) and just let the app
     connect to `http://127.0.0.1:7823` like any other client.
-- **Diff tab is a placeholder**: run-to-run diffing is planned for a later
-  phase (see `CHRONICLE_PLAN.md`); the "Diff" tab currently just says so.
 - **Settings icon has no functionality yet**: it's present in the top nav
   per this phase's spec but doesn't open anything.
 - **Token cost estimate is a flat-rate approximation (as of Phase 5)**: the
@@ -89,6 +87,24 @@
   doesn't guarantee that shape. A tool that "succeeds" at the transport
   level but reports failure only inside `data` will be counted as a
   success.
+- **Execution diff is positional, not content-aligned (as of Phase 7)**:
+  `Diff/computeDiff.ts`'s `buildEventDiffRows` zips both runs' events by
+  index — event 5 in Run A is always compared to event 5 in Run B. If one
+  run has one extra event early on (e.g. an extra retry), every later event
+  shifts by one position and shows up as "different" or "missing" even
+  though the same logical steps occurred, just offset. A real sequence
+  alignment (like a text diff's LCS) would handle insertions/deletions more
+  gracefully; this is simpler and matches the phase's "diff by sequence
+  position" spec.
+- **Prompt diff only reads `data.prompt` (as of Phase 7)**: `PromptDiff`
+  compares `event.data.prompt` for same-position `llm_call` events on both
+  sides; if a value isn't a string there (or is stored under a different
+  key), it's treated as an empty prompt rather than diffed.
+- **Diff summary's delta coloring applies uniformly to tool-call count**:
+  `DiffSummary.tsx` colors every stat's B-minus-A delta green when B is
+  lower, red when higher — including "Total tool calls," where fewer calls
+  isn't necessarily better. Kept for visual consistency across the table
+  rather than special-casing that one row.
 
 This list will grow as the project matures. If you hit something not listed
 here, please open an issue.

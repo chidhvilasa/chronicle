@@ -1,6 +1,6 @@
 import { useAppStore } from "../store/useAppStore";
+import { Diff } from "./Diff";
 import { Timeline } from "./Timeline";
-import { DiffPanel } from "./panels/DiffPanel";
 import { InspectorPanel } from "./panels/InspectorPanel";
 
 /** Main content area; renders whichever panel the top nav's tabs select. */
@@ -16,7 +16,7 @@ export function MainPanel() {
         <Timeline runId={selectedRunId} onSegmentSelect={selectDetail} onAgentSelect={selectAgent} />
       )}
       {activePanel === "inspector" && <InspectorPanel />}
-      {activePanel === "diff" && <DiffPanel />}
+      {activePanel === "diff" && <Diff />}
     </main>
   );
 }

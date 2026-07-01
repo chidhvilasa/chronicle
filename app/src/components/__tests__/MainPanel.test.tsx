@@ -32,6 +32,6 @@ describe("MainPanel", () => {
   it("renders the diff panel when activePanel is diff", () => {
     useAppStore.getState().setActivePanel("diff");
     render(<MainPanel />);
-    expect(screen.getByTestId("diff-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("diff-root")).toBeInTheDocument();
   });
 });

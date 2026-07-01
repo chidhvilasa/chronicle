@@ -116,7 +116,7 @@ describe("Timeline", () => {
     render(<Timeline runId="run-1" />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("timeline-root")).toBeInTheDocument();
+      expect(mockChart.setOption).toHaveBeenCalled();
     });
     expect(screen.getByTestId("token-usage-summary")).toBeInTheDocument();
     expect(screen.getByTestId("timeline-controls")).toBeInTheDocument();

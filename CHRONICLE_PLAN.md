@@ -272,6 +272,30 @@ payloads render in a plain scrollable monospace `.code-block`, not a real
 syntax-highlighted code view (no highlighting library is included yet; see
 `KNOWN_ISSUES.md`).
 
+### Diff (`app/src/components/Diff/`)
+
+The Diff tab. `Diff.tsx` owns two `RunSelector.tsx` dropdowns (each disables
+the run picked in the other, so the same run can't be selected twice), fetches
+`GET /runs/{id}/events` for both selected runs in parallel, and renders
+`DiffSummary.tsx` plus `EventDiffList.tsx`. All diffing is pure, synchronous,
+client-side logic in `computeDiff.ts` — no diff-specific server endpoint.
+`computeRunStats(run, events)` derives duration (from `Run.started_at`/
+`finished_at`), tokens (`Run.total_tokens`), an estimated cost (summed from
+events' `input_tokens`/`output_tokens`, same constants as `TokenUsageSummary`),
+error count, and tool-call count; `DiffSummary.tsx` colors the B-minus-A delta
+green when B is lower (faster/cheaper/fewer) and red otherwise.
+`buildEventDiffRows(eventsA, eventsB)` zips both event lists **by index**
+(sequence position, not content matching) up to
+`Math.max(eventsA.length, eventsB.length)`; a row is `"missing_a"`/
+`"missing_b"` when only one side has an event at that position, otherwise
+`"same"` or `"different"` based on whether duration/tokens/tool
+name/error differ. `EventDiffList.tsx` colors `different` rows yellow and
+`missing_*` rows red. For a row where both sides are `llm_call`,
+`PromptDiff.tsx` renders a character-level diff of `data.prompt` via the
+`diff` package's `diffChars` (additions green, removals red-strikethrough,
+unchanged gray). If either selected run has more than 500 events, `Diff.tsx`
+shows a warning banner but still renders the full comparison.
+
 ### TypeScript interfaces (`app/src/types/index.ts`)
 
 ```typescript

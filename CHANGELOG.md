@@ -87,3 +87,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   used in the run with success rate/latency/tokens and an expandable
   per-call list. Both are computed by pure functions in
   `Inspector/summarize.ts`. Removed `DetailInspector.tsx` (superseded).
+- `chronicle-app`: replaced the Diff tab's placeholder with
+  `app/src/components/Diff/`. `RunSelector.tsx` offers two dropdowns (each
+  disables the other's current selection). `DiffSummary.tsx` compares total
+  duration/tokens/cost/errors/tool calls side by side, coloring the B-minus-A
+  delta green (improvement) or red (regression). `EventDiffList.tsx` diffs
+  both runs' events by sequence position — same rows unhighlighted,
+  differing-field rows yellow, rows missing from one side red — and
+  `PromptDiff.tsx` renders a character-level diff (via the new `diff`
+  dependency's `diffChars`) of same-position `llm_call` prompts. All
+  diffing runs client-side in `computeDiff.ts`; a pair of runs where either
+  side has more than 500 events shows a warning banner but still renders in
+  full. Removed `panels/DiffPanel.tsx` (superseded).

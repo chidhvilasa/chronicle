@@ -464,6 +464,129 @@
   color: #b00020;
 }
 
+/* Diff */
+
+.diff-root {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.diff-run-selector {
+  display: flex;
+  gap: 1.5rem;
+}
+
+.diff-run-selector label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+}
+
+.diff-warning {
+  background-color: #fff3cd;
+  color: #856404;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.diff-summary-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.diff-summary-table th,
+.diff-summary-table td {
+  text-align: left;
+  padding: 0.3rem 0.5rem;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.diff-delta-good {
+  color: #2e9e4f;
+  font-weight: 600;
+}
+
+.diff-delta-bad {
+  color: #b00020;
+  font-weight: 600;
+}
+
+.diff-event-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.diff-row {
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+}
+
+.diff-row-different {
+  background-color: #fff9db;
+}
+
+.diff-row-missing_a,
+.diff-row-missing_b {
+  background-color: #fbe1e1;
+}
+
+.diff-row-header {
+  font-weight: 600;
+  margin: 0 0 0.25rem 0;
+  font-size: 0.85rem;
+}
+
+.diff-missing-label {
+  color: #b00020;
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+.diff-fields-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+}
+
+.diff-fields-table th,
+.diff-fields-table td {
+  text-align: left;
+  padding: 0.15rem 0.4rem;
+}
+
+.diff-field-different {
+  background-color: #fff3cd;
+}
+
+.prompt-diff {
+  margin-top: 0.4rem;
+}
+
+.diff-added {
+  background-color: #d8f5e0;
+  color: #155724;
+}
+
+.diff-removed {
+  background-color: #fbe1e1;
+  color: #721c24;
+  text-decoration: line-through;
+}
+
+.diff-same {
+  color: #888;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     color: #f6f6f6;
@@ -541,5 +664,20 @@
 
   .tool-call-list li {
     border-color: #3a3a3a;
+  }
+
+  .diff-summary-table th,
+  .diff-summary-table td,
+  .diff-fields-table th,
+  .diff-fields-table td {
+    border-color: #4a4a4a;
+  }
+
+  .code-block.prompt-diff {
+    background-color: #1f1f1f;
+  }
+
+  .diff-same {
+    color: #999;
   }
 }
