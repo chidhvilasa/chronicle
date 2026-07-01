@@ -1,4 +1,5 @@
-import type { ChronicleEvent, ChronicleRun } from "../types";
+import { FETCH_TIMEOUT_MS } from "../config";
+import type { Event, HealthStatus, Run, Timeline } from "../types";
 
 const DEFAULT_SERVER_URL = "http://127.0.0.1:7823";
 
@@ -10,18 +11,47 @@ export class ChronicleApiError extends Error {
   }
 }
 
+interface ServerErrorBody {
+  error?: string;
+  detail?: string;
+}
+
+async function parseErrorDetail(response: Response): Promise<string | null> {
+  try {
+    const body = (await response.json()) as ServerErrorBody;
+    return typeof body.detail === "string" ? body.detail : null;
+  } catch {
+    return null;
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
   let response: Response;
   try {
-    response = await fetch(`${DEFAULT_SERVER_URL}${path}`, init);
-  } catch {
+    response = await fetch(`${DEFAULT_SERVER_URL}${path}`, {
+      ...init,
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new ChronicleApiError(
+        "Chronicle server did not respond in time. Is it running?"
+      );
+    }
     throw new ChronicleApiError(
       "Could not reach the Chronicle server. Is it running?"
     );
+  } finally {
+    clearTimeout(timeoutId);
   }
+
   if (!response.ok) {
+    const detail = await parseErrorDetail(response);
     throw new ChronicleApiError(
-      `Chronicle server returned an error (${response.status})`,
+      detail ?? `Chronicle server returned an error (${response.status})`,
       response.status
     );
   }
@@ -32,11 +62,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const chronicleApi = {
-  listRuns: (): Promise<ChronicleRun[]> => request("/runs"),
-  listRunEvents: (runId: string): Promise<ChronicleEvent[]> =>
-    request(`/runs/${runId}/events`),
-  getRunTimeline: (runId: string): Promise<ChronicleEvent[]> =>
-    request(`/runs/${runId}/timeline`),
-  deleteRun: (runId: string): Promise<void> =>
-    request(`/runs/${runId}`, { method: "DELETE" }),
+  listRuns: (): Promise<Run[]> => request("/runs"),
+  listRunEvents: (runId: string): Promise<Event[]> => request(`/runs/${runId}/events`),
+  getRunTimeline: (runId: string): Promise<Timeline> => request(`/runs/${runId}/timeline`),
+  deleteRun: (runId: string): Promise<void> => request(`/runs/${runId}`, { method: "DELETE" }),
+  checkHealth: (): Promise<HealthStatus> => request("/health"),
 };

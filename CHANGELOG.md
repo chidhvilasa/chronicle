@@ -44,3 +44,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   Moved the default port to `7823` (was `8765`) and restricted CORS to
   `http://localhost:1420`. All error responses are now shaped
   `{error, detail}`. Requires Python 3.10+.
+- `chronicle-app`: rebuilt as a three-panel layout — top nav (brand, panel
+  switcher tabs, connection-status dot, settings icon), a `RunList` sidebar
+  polling `GET /runs` every `RUN_LIST_POLL_INTERVAL_MS`, a `MainPanel` with
+  Timeline/Inspector/Diff tabs, and a collapsible `DetailInspector`. Added a
+  Zustand store (`useAppStore`) for `runs`/`selectedRunId`/`loading`/`error`/
+  `activePanel`/`selectedDetail`. Rewrote `app/src/types/index.ts` and
+  `app/src/api/client.ts` to match the Phase 3 server response shapes
+  field-for-field, with `AbortController`-based 5s timeouts and
+  `{error, detail}`-aware human-readable error messages. Added
+  `start_chronicle_server`/`stop_chronicle_server` Tauri commands
+  (`app/src-tauri/src/lib.rs`) that spawn/kill the Chronicle server as a
+  child process on app launch/exit, surfacing startup failures as a UI
+  banner via a `chronicle-server-error` event — not a bundled Tauri
+  sidecar binary (see `KNOWN_ISSUES.md`).

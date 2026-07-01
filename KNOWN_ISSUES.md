@@ -16,15 +16,6 @@
 - **No authentication**: The Chronicle server has no auth layer. It's meant
   to run on `127.0.0.1` alongside the agent process being traced (see
   `SECURITY.md`).
-- **App/server schema drift (as of Phase 3)**: `chronicle-server`'s
-  `POST /events` and the rest of its endpoints now match the Phase 2 SDK
-  event model (`event_id`/`data`/`agent_name`/`duration_ms`/`input_tokens`/
-  `output_tokens`/`error`, plus the new `runs` summary columns and the
-  `/runs/{id}/timeline` lane/segment shape). The desktop app
-  (`app/src/types.ts`, `app/src/api/client.ts`) has *not* been updated yet
-  and still models the Phase 1 response shape (`id`/`payload`/`parent_id`,
-  `ChronicleRun.event_count`). The app will not render real server
-  responses correctly until Phase 4 updates it.
 - **The server's default port changed to `7823`** (from `8765` in Phases
   1–2) to match this phase's spec; `chronicle-sdk`'s
   `ChronicleTracer.DEFAULT_SERVER_URL` and the app's
@@ -45,6 +36,38 @@
 - **No schema migrations yet**: The server's SQLite schema is created with
   `CREATE TABLE IF NOT EXISTS` and has no migration system. Schema changes
   between versions may require deleting the local database file.
+
+## App
+
+- **The Chronicle server is not a real bundled Tauri sidecar (as of Phase
+  4)**: `app/src-tauri/src/lib.rs`'s `start_chronicle_server`/
+  `stop_chronicle_server` commands shell out to `python -m uvicorn
+  src.main:app` in the sibling `/server` checkout (`../../server` relative
+  to `src-tauri`) as a plain child process on app launch, and kill it on
+  exit. This is **not** a PyInstaller-bundled binary declared via
+  `tauri.conf.json`'s `bundle.externalBin` / `tauri-plugin-shell`'s sidecar
+  API — building and cross-compiling a standalone `chronicle-server`
+  executable per platform is future work. Practical implications:
+  - Requires `python` on `PATH` and `chronicle-server` installed in that
+    Python environment (`pip install -e .` in `/server`).
+  - The relative path to `/server` only resolves in a dev checkout; it will
+    not resolve inside a packaged/distributed app bundle.
+  - If auto-start fails for any reason, the app emits
+    `chronicle-server-error` and shows the message as a banner (see
+    `app/src/hooks/useServerStartupError.ts`) — but per this phase's spec,
+    the app still works if you start the server yourself
+    (`cd server && uvicorn src.main:app --port 7823`) and just let the app
+    connect to `http://127.0.0.1:7823` like any other client.
+- **Timeline segments aren't individually addressable**: `GET
+  /runs/{id}/timeline` segments don't carry an `event_id` (see
+  `server/src/timeline.py`), so clicking a segment in the Timeline tab shows
+  its own label/duration/token usage in the detail inspector, but can't look
+  up the original event's full payload the way clicking a row in the
+  Inspector tab can.
+- **Diff tab is a placeholder**: run-to-run diffing is planned for a later
+  phase (see `CHRONICLE_PLAN.md`); the "Diff" tab currently just says so.
+- **Settings icon has no functionality yet**: it's present in the top nav
+  per this phase's spec but doesn't open anything.
 
 This list will grow as the project matures. If you hit something not listed
 here, please open an issue.

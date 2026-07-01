@@ -193,47 +193,82 @@ produce no segment (see `KNOWN_ISSUES.md`).
 
 ## 4. App design (`/app`)
 
-Tauri + React + TypeScript desktop app. Layout: a left **sidebar** listing
-runs (id, event count, start time), a main **timeline** panel showing the
-selected run's events in order, and a right **inspector** panel showing the
-full JSON payload of the selected event. See `app/src/components/`.
+Tauri + React + TypeScript desktop app, three-panel layout under a top nav:
+
+- **Top nav** (`app/src/components/TopNav.tsx`): Chronicle brand, panel
+  switcher tabs (Timeline / Inspector / Diff), a settings icon (no
+  functionality yet), and a connection-status dot that polls `GET /health`
+  every `HEALTH_CHECK_INTERVAL_MS`.
+- **Left sidebar, 240px** (`app/src/components/RunList.tsx`): polls
+  `GET /runs` every `RUN_LIST_POLL_INTERVAL_MS` (see `app/src/config`) and
+  renders a card per run — truncated `run_id`, a status badge, relative
+  start time, total tokens, and duration. Empty state: "No runs yet.
+  Instrument your agent with the Chronicle SDK." Clicking a card selects
+  the run.
+- **Main panel** (`app/src/components/MainPanel.tsx`): renders whichever tab
+  is active — `TimelinePanel` (per-agent lanes/segments from
+  `GET /runs/{id}/timeline`), `InspectorPanel` (flat chronological event
+  list from `GET /runs/{id}/events`), or `DiffPanel` (placeholder; real
+  diffing is a later phase). Clicking a segment or event row sets it as the
+  selected detail item.
+- **Right panel, 320px, collapsible** (`app/src/components/DetailInspector.tsx`):
+  shows the full JSON of whichever event or segment is currently selected.
+
+State lives in a Zustand store (`app/src/store/useAppStore.ts`): `runs`,
+`selectedRunId`, `loading`, `error`, `activePanel`, `selectedDetail`.
 
 The app talks to the server exclusively over its REST API
-(`app/src/api/client.ts`) — it holds no direct database access. Network and
-server-down errors surface as a human-readable banner
-(`ChronicleApiError.message`), never a raw stack trace.
+(`app/src/api/client.ts`) — it holds no direct database access. Every fetch
+has a `FETCH_TIMEOUT_MS` (5s) timeout via `AbortController`; failures surface
+as `ChronicleApiError.message`, parsed from the server's
+`{error, detail}` body when available, never a raw stack trace.
 
-### TypeScript interfaces (`app/src/types.ts`)
+### TypeScript interfaces (`app/src/types/index.ts`)
 
 ```typescript
 export type EventType =
-  | "tool_call"
-  | "llm_call"
-  | "agent_message"
-  | "memory_update"
-  | "error"
-  | "retry";
+  | "tool_call" | "llm_call" | "agent_message" | "memory_update" | "error" | "retry";
 
-export interface ChronicleEvent {
-  id: string;
-  run_id: string;
-  parent_id: string | null;
-  event_type: EventType;
-  timestamp: number;
-  payload: Record<string, unknown>;
+export interface Event {
+  event_id: string; run_id: string; timestamp: number; event_type: EventType;
+  agent_name: string | null; duration_ms: number | null;
+  input_tokens: number | null; output_tokens: number | null;
+  data: Record<string, unknown>; error: string | null;
 }
 
-export interface ChronicleRun {
-  id: string;
-  started_at: number;
-  ended_at: number;
-  event_count: number;
+export interface Run {
+  run_id: string; started_at: number; finished_at: number;
+  framework: string | null; agent_count: number; total_tokens: number;
+  total_cost_usd: number; status: string; metadata: Record<string, unknown>;
+}
+
+export type TimelineSegmentType = "llm_call" | "tool_call" | "waiting" | "error";
+
+export interface TimelineSegment {
+  type: TimelineSegmentType; start_time_ms: number; duration_ms: number;
+  label: string; token_usage: { input_tokens: number | null; output_tokens: number | null } | null;
+}
+
+export interface TimelineLane {
+  agent_name: string;
+  segments: TimelineSegment[];
 }
 ```
 
-> As of Phase 3 these interfaces (and `app/src/api/client.ts`) describe the
-> Phase 1 server response shape, not the current one — see the Phase 4 entry
-> below and `KNOWN_ISSUES.md`.
+These mirror `server/src/models.py`'s `EventOut`/`RunOut`/
+`TimelineSegmentOut`/`TimelineLaneOut` field-for-field.
+
+### Tauri backend (`app/src-tauri/src/lib.rs`)
+
+`start_chronicle_server`/`stop_chronicle_server` Tauri commands spawn/kill
+the Chronicle server as a child process (`python -m uvicorn src.main:app`)
+automatically on app launch (`.setup()`) and exit (`RunEvent::ExitRequested`).
+On failure, the Rust side emits a `chronicle-server-error` event that
+`app/src/hooks/useServerStartupError.ts` listens for and surfaces as a
+banner. **This is not a bundled Tauri sidecar binary** — see
+`KNOWN_ISSUES.md` for what that means in practice and the documented
+fallback (run `chronicle-server` yourself; the app connects over HTTP
+either way).
 
 ## 5. Phase-by-phase plan
 
@@ -263,15 +298,22 @@ export interface ChronicleRun {
   `GET /runs/{id}/timeline`; moved the default port to `7823` and restricted
   CORS to the Tauri dev origin; unified all error responses to
   `{error, detail}`.
-- **Phase 4 — App: reconcile client + live timeline**: update
-  `app/src/types.ts` and `app/src/api/client.ts` to match the Phase 3
-  response shapes (they still reflect the Phase 1 schema — see
-  `KNOWN_ISSUES.md`), render the new lane/segment timeline, subscribe to a
-  future WebSocket stream so it updates live while an agent runs, add run
-  search/filter in the sidebar, and a syntax-highlighted JSON viewer in the
-  inspector.
-- **Phase 5 — Replay**: step-by-step visual replay of a captured run, and a
-  diff view comparing two runs (e.g. before/after a prompt change).
+- **Phase 4 — Tauri app shell + run list** *(this phase)*: rebuilt
+  `app/src/types/index.ts` and `app/src/api/client.ts` to match the Phase 3
+  server response shapes field-for-field (closing the Phase 3 drift gap),
+  with `AbortController`-based 5s timeouts on every request. Added the
+  three-panel layout — `TopNav`, `RunList` (polling `GET /runs`), `MainPanel`
+  (Timeline/Inspector/Diff tabs), `DetailInspector` (collapsible) — backed by
+  a Zustand store (`app/src/store/useAppStore.ts`). Added
+  `start_chronicle_server`/`stop_chronicle_server` Tauri commands that spawn
+  and kill the server as a child process on launch/exit, with a
+  `chronicle-server-error` event surfaced as a UI banner on failure (not a
+  bundled sidecar binary — see `KNOWN_ISSUES.md`).
+- **Phase 5 — Replay & live updates**: subscribe to a future WebSocket
+  stream so the timeline updates live while an agent runs; step-by-step
+  visual replay of a captured run; a real diff view comparing two runs
+  (e.g. before/after a prompt change) to replace the Phase 4 placeholder;
+  run search/filter in the sidebar; a syntax-highlighted JSON viewer.
 - **Phase 6 — Analytics**: cost, latency, and error-rate aggregation, both
   per-run and across all runs, surfaced as charts in the app.
 - **Phase 7 — Packaging & distribution**: publish `chronicle-sdk` to PyPI,
@@ -291,10 +333,12 @@ export interface ChronicleRun {
   events into `chronicle_runs/{run_id}.json` when the server is
   unreachable, so instrumentation never blocks or loses data because the
   UI happens to be closed.
-- **App/server schema drift (as of Phase 3)**: `app/src/types.ts` and
-  `app/src/api/client.ts` still reflect the Phase 1 server response shape
-  (`id`/`payload`/`parent_id`, `ChronicleRun.event_count`), not the Phase 3
-  shape (`event_id`/`data`/`agent_name`/`duration_ms`/`token_usage`/`error`,
-  and the new `RunOut`/`TimelineOut` fields). The app's sidebar/timeline/
-  inspector will not render real server data correctly until Phase 4
-  updates them. See `KNOWN_ISSUES.md`.
+- **The Tauri app doesn't bundle the server as a real sidecar (as of Phase
+  4)**: `start_chronicle_server`/`stop_chronicle_server` spawn `python -m
+  uvicorn` as a plain child process pointed at the sibling `/server` dev
+  checkout, not a PyInstaller-built binary declared via `tauri.conf.json`'s
+  `bundle.externalBin`. It only works in a dev checkout with `python` on
+  `PATH` and `chronicle-server` installed; a packaged app would need a real
+  bundled sidecar (future work). The documented fallback — run the server
+  yourself and let the app connect over HTTP — always works regardless. See
+  `KNOWN_ISSUES.md`.
