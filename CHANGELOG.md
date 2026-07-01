@@ -20,3 +20,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   event inspector panel.
 - CI workflow running Python tests for `/sdk` and `/server`, and TypeScript
   type-checking plus Vitest for `/app`.
+
+### Changed
+
+- `chronicle-sdk`: reworked the event model into
+  `chronicle.models.ChronicleEvent`/`TokenUsage` dataclasses
+  (`event_id`/`data`/`agent_name`/`duration_ms`/`token_usage`/`error`).
+  `ChronicleTracer` now exposes `record_event()`/`flush()`, buffers events,
+  and flushes them to the server in batches, falling back to
+  `chronicle_runs/{run_id}.json` (instead of a local SQLite database) when
+  the server is unreachable. Replaced the LangChain callback handler with
+  `chronicle.adapters.langgraph.LangGraphAdapter`, which adds
+  `on_agent_finish` handling and captures per-call duration and token usage.
+  Requires Python 3.10+.

@@ -40,5 +40,6 @@ npm-debug.log*
 
 # Local Chronicle data
 .chronicle/
+chronicle_runs/
 *.db
 *.db-journal

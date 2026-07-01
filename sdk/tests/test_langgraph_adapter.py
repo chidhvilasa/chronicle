@@ -1,0 +1,116 @@
+import json
+import uuid
+from types import SimpleNamespace
+
+from chronicle import ChronicleTracer
+from chronicle.adapters.langgraph import LangGraphAdapter
+
+
+def _tracer(tmp_path, **kwargs):
+    return ChronicleTracer(
+        server_url="http://127.0.0.1:1",  # nothing listens here
+        timeout=0.2,
+        local_dir=tmp_path / "chronicle_runs",
+        batch_size=1,
+        **kwargs,
+    )
+
+
+def _read_events(tmp_path, run_id):
+    path = tmp_path / "chronicle_runs" / f"{run_id}.json"
+    return json.loads(path.read_text())
+
+
+def test_llm_hooks_record_llm_call_event_with_token_usage(tmp_path):
+    tracer = _tracer(tmp_path)
+    adapter = LangGraphAdapter(tracer, agent_name="test-agent")
+    run_id = uuid.uuid4()
+
+    adapter.on_llm_start({"name": "gpt-4o"}, ["hello"], run_id=run_id)
+    response = SimpleNamespace(
+        generations=[[SimpleNamespace(text="hi there")]],
+        llm_output={
+            "token_usage": {"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8}
+        },
+    )
+    adapter.on_llm_end(response, run_id=run_id)
+    tracer.close()
+
+    events = _read_events(tmp_path, tracer.run_id)
+    assert len(events) == 1
+    event = events[0]
+    assert event["event_type"] == "llm_call"
+    assert event["agent_name"] == "test-agent"
+    assert event["data"]["model"] == "gpt-4o"
+    assert event["data"]["prompts"] == ["hello"]
+    assert event["data"]["completion"] == "hi there"
+    assert event["token_usage"] == {"input_tokens": 5, "output_tokens": 3, "total_tokens": 8}
+    assert event["duration_ms"] is not None
+
+
+def test_llm_hooks_without_token_usage(tmp_path):
+    tracer = _tracer(tmp_path)
+    adapter = LangGraphAdapter(tracer)
+    run_id = uuid.uuid4()
+
+    adapter.on_llm_start({"name": "gpt-4o"}, ["hi"], run_id=run_id)
+    response = SimpleNamespace(generations=[[SimpleNamespace(text="ok")]], llm_output={})
+    adapter.on_llm_end(response, run_id=run_id)
+    tracer.close()
+
+    events = _read_events(tmp_path, tracer.run_id)
+    assert events[0]["token_usage"] is None
+
+
+def test_tool_hooks_record_tool_call_event(tmp_path):
+    tracer = _tracer(tmp_path)
+    adapter = LangGraphAdapter(tracer)
+    run_id = uuid.uuid4()
+
+    adapter.on_tool_start({"name": "search"}, "weather query", run_id=run_id)
+    adapter.on_tool_end("sunny", run_id=run_id)
+    tracer.close()
+
+    events = _read_events(tmp_path, tracer.run_id)
+    assert events[0]["event_type"] == "tool_call"
+    assert events[0]["data"]["tool_name"] == "search"
+    assert events[0]["data"]["arguments"] == {"input": "weather query"}
+    assert events[0]["data"]["result"] == "sunny"
+    assert events[0]["duration_ms"] is not None
+
+
+def test_on_agent_action_records_agent_message(tmp_path):
+    tracer = _tracer(tmp_path)
+    adapter = LangGraphAdapter(tracer)
+
+    adapter.on_agent_action("call search tool", run_id=uuid.uuid4())
+    tracer.close()
+
+    events = _read_events(tmp_path, tracer.run_id)
+    assert events[0]["event_type"] == "agent_message"
+    assert events[0]["data"]["content"] == "call search tool"
+
+
+def test_on_agent_finish_records_agent_message(tmp_path):
+    tracer = _tracer(tmp_path)
+    adapter = LangGraphAdapter(tracer)
+
+    adapter.on_agent_finish("done", run_id=uuid.uuid4())
+    tracer.close()
+
+    events = _read_events(tmp_path, tracer.run_id)
+    assert events[0]["event_type"] == "agent_message"
+    assert events[0]["data"]["content"] == "done"
+
+
+def test_on_chain_error_records_error_event(tmp_path):
+    tracer = _tracer(tmp_path)
+    adapter = LangGraphAdapter(tracer)
+
+    adapter.on_chain_error(ValueError("boom"), run_id=uuid.uuid4())
+    tracer.close()
+
+    events = _read_events(tmp_path, tracer.run_id)
+    assert events[0]["event_type"] == "error"
+    assert events[0]["error"] == "boom"
+    assert events[0]["data"]["error_type"] == "ValueError"

@@ -10,8 +10,8 @@ systems.
 ┌──────────────────┐        HTTP POST /events        ┌────────────────────┐
 │  chronicle-sdk    │ ───────────────────────────────▶│  chronicle-server   │
 │  (Python, runs    │                                  │  (FastAPI)          │
-│  inside the       │   falls back to local SQLite     │                     │
-│  agent process)   │   if the server is unreachable   │  SQLite (aiosqlite) │
+│  inside the       │  falls back to chronicle_runs/   │                     │
+│  agent process)   │  {run_id}.json if unreachable     │  SQLite (aiosqlite) │
 └──────────────────┘                                   └─────────┬──────────┘
                                                                   │ REST
                                                                   ▼
@@ -23,17 +23,18 @@ systems.
 ```
 
 1. Agent code is instrumented with `ChronicleTracer` (or a framework
-   integration, e.g. the LangGraph callback handler).
+   adapter, e.g. `LangGraphAdapter`).
 2. Every significant thing the agent does — a tool call, an LLM call, a
    message, a memory write, an error, a retry — becomes a `ChronicleEvent`
-   and is POSTed to the local Chronicle server.
-3. The server persists events (and derives run metadata) in SQLite via
-   `aiosqlite`.
+   and is buffered by the tracer.
+3. The tracer flushes buffered events to the local Chronicle server in
+   batches via `POST /events`; the server persists them (and derives run
+   metadata) in SQLite via `aiosqlite`.
 4. The desktop app polls/queries the server's REST API and renders a run
    list, a timeline, and an inspector for the selected event.
-5. If the server isn't running, the SDK writes events directly to the same
-   local SQLite file so no traces are lost — the desktop app will pick them
-   up next time it queries that database.
+5. If the server isn't running, the tracer writes the unsent events to
+   `chronicle_runs/{run_id}.json` instead, so no traces are lost while the
+   desktop app isn't running.
 
 ## 2. SDK design (`/sdk`)
 
@@ -44,21 +45,20 @@ run (`run_id`). See `sdk/src/chronicle/tracer.py`.
 
 ```python
 class ChronicleTracer:
-    def __init__(self, run_id=None, server_url=DEFAULT_SERVER_URL, timeout=2.0, local_db_path=DEFAULT_DB_PATH): ...
-    def log_event(self, event_type, payload, parent_id=None) -> ChronicleEvent: ...
-    def tool_call(self, tool_name, arguments, **extra) -> ChronicleEvent: ...
-    def llm_call(self, model, **extra) -> ChronicleEvent: ...
-    def agent_message(self, role, content, **extra) -> ChronicleEvent: ...
-    def memory_update(self, key, new_value, **extra) -> ChronicleEvent: ...
-    def error(self, message, **extra) -> ChronicleEvent: ...
-    def retry(self, attempt, max_attempts, **extra) -> ChronicleEvent: ...
+    def __init__(self, run_id=None, server_url=DEFAULT_SERVER_URL, batch_size=10, timeout=2.0, local_dir=DEFAULT_LOCAL_DIR): ...
+    def record_event(self, event_type, data=None, agent_name=None, duration_ms=None, token_usage=None, error=None) -> ChronicleEvent: ...
+    def flush(self) -> None: ...
     def close(self) -> None: ...
 ```
 
-On every call, the tracer POSTs the event to the Chronicle server; on any
-`httpx.HTTPError` (server not running, connection refused, timeout) it falls
-back to `LocalStorage`, which writes the same event directly into the local
-SQLite database (see `sdk/src/chronicle/storage.py`).
+`record_event` buffers a `ChronicleEvent` and auto-flushes once the buffer
+reaches `batch_size`. `flush()` POSTs each buffered event to the Chronicle
+server; the first `httpx.HTTPError` in a batch (server not running,
+connection refused, timeout) stops further POSTs for that batch and writes
+the remaining unsent events to `chronicle_runs/{run_id}.json` via
+`sdk/src/chronicle/storage.py`'s `write_local_events`, so nothing already
+sent is duplicated and nothing unsent is lost. `ChronicleTracer` is also a
+context manager that flushes on `__exit__`.
 
 ### Event types
 
@@ -71,67 +71,47 @@ SQLite database (see `sdk/src/chronicle/storage.py`).
 | `error`           | An error occurred during the run               |
 | `retry`           | An operation was retried                       |
 
-### LangGraph / LangChain callback handler
+### LangGraph / LangChain adapter
 
-`chronicle.integrations.langgraph.ChronicleCallbackHandler` forwards
-LangChain/LangGraph lifecycle callbacks (`on_tool_start`, `on_tool_end`,
-`on_llm_start`, `on_llm_end`, `on_chain_error`, `on_agent_action`) to a
-`ChronicleTracer`. It subclasses `langchain_core.callbacks.BaseCallbackHandler`
-when `langchain_core` is installed, and degrades to a plain duck-typed object
+`chronicle.adapters.langgraph.LangGraphAdapter` forwards LangChain/LangGraph
+lifecycle callbacks (`on_llm_start`, `on_llm_end`, `on_tool_start`,
+`on_tool_end`, `on_agent_action`, `on_agent_finish`, `on_chain_error`) to a
+`ChronicleTracer`. It correlates each `*_start`/`*_end` pair by LangChain's
+own per-call `run_id` (a `uuid.UUID`, distinct from `ChronicleTracer.run_id`)
+to compute `duration_ms`, and extracts `token_usage` from
+`LLMResult.llm_output["token_usage"]` when the provider populates it. It
+subclasses `langchain_core.callbacks.BaseCallbackHandler` when
+`langchain_core` is installed, and degrades to a plain duck-typed object
 otherwise, so `chronicle-sdk` has no hard dependency on LangChain.
 
-### Python event schemas (TypedDict)
+### Python event model (dataclasses)
 
-See `sdk/src/chronicle/events.py` for the source of truth. Summarized:
+See `sdk/src/chronicle/models.py` for the source of truth. Summarized:
 
 ```python
-class ChronicleEvent(TypedDict):
-    id: str
+EventType = Literal["tool_call", "llm_call", "agent_message", "memory_update", "error", "retry"]
+
+@dataclass
+class TokenUsage:
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
+
+@dataclass
+class ChronicleEvent:
     run_id: str
-    parent_id: str | None
-    event_type: Literal["tool_call", "llm_call", "agent_message", "memory_update", "error", "retry"]
-    timestamp: float
-    payload: dict[str, Any]
-
-class ToolCallPayload(TypedDict, total=False):
-    tool_name: str
-    arguments: dict[str, Any]
-    result: Any
-    duration_ms: float
-    success: bool
-
-class LLMCallPayload(TypedDict, total=False):
-    model: str
-    provider: str
-    prompt: str
-    messages: list[dict[str, Any]]
-    completion: str
-    prompt_tokens: int
-    completion_tokens: int
-    duration_ms: float
-    cost_usd: float
-
-class AgentMessagePayload(TypedDict, total=False):
-    role: str
-    content: str
-    agent_name: str
-
-class MemoryUpdatePayload(TypedDict, total=False):
-    key: str
-    old_value: Any
-    new_value: Any
-    operation: str
-
-class ErrorPayload(TypedDict, total=False):
-    message: str
-    error_type: str
-    traceback: str
-
-class RetryPayload(TypedDict, total=False):
-    attempt: int
-    max_attempts: int
-    reason: str
+    event_type: EventType
+    agent_name: str | None = None
+    data: dict[str, Any] = field(default_factory=dict)
+    duration_ms: float | None = None
+    token_usage: TokenUsage | None = None
+    error: str | None = None
+    event_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    timestamp: float = field(default_factory=time.time)
 ```
+
+`ChronicleEvent.to_dict()` / `TokenUsage.to_dict()` produce the JSON payload
+sent to `POST /events` and written to `chronicle_runs/{run_id}.json`.
 
 ## 3. Server design (`/server`)
 
@@ -194,20 +174,26 @@ export interface ChronicleRun {
 
 ## 5. Phase-by-phase plan
 
-- **Phase 1 — Scaffold + repo + plan** *(this phase)*: monorepo structure,
-  `chronicle-sdk` core (tracer, event schemas, local SQLite fallback,
-  LangGraph handler), `chronicle-server` core (FastAPI + aiosqlite, the five
-  endpoints above), `chronicle-app` shell (sidebar/timeline/inspector reading
-  from the server), root docs, CI.
-- **Phase 2 — SDK hardening**: async HTTP client with event batching and
-  retry/backoff, context-manager based spans for automatic parent/child
-  event nesting, thin instrumentation wrappers for the OpenAI and Anthropic
-  Python SDKs, a `chronicle doctor` CLI command to check server
-  reachability, expanded test coverage.
-- **Phase 3 — Server hardening**: a WebSocket endpoint for live event
-  streaming to the app, run search/filtering/pagination, JSONL export and
-  import, a background retention/cleanup job, consistent structured error
-  responses.
+- **Phase 1 — Scaffold + repo + plan**: monorepo structure, `chronicle-sdk`
+  core (tracer, event schemas, local SQLite fallback, LangGraph handler),
+  `chronicle-server` core (FastAPI + aiosqlite, the five endpoints above),
+  `chronicle-app` shell (sidebar/timeline/inspector reading from the
+  server), root docs, CI.
+- **Phase 2 — Python SDK core + LangGraph adapter** *(this phase)*:
+  rebuilt the event model as `chronicle.models.ChronicleEvent`/`TokenUsage`
+  dataclasses; `ChronicleTracer.record_event()` buffers events and flushes
+  them to the server in batches via `POST /events`, falling back to
+  `chronicle_runs/{run_id}.json` on failure; added
+  `chronicle.adapters.langgraph.LangGraphAdapter` implementing
+  `on_llm_start`/`on_llm_end`/`on_tool_start`/`on_tool_end`/
+  `on_agent_action`/`on_agent_finish`/`on_chain_error` with duration and
+  token-usage capture; expanded test coverage (models, tracer, adapter).
+- **Phase 3 — Server hardening**: reconcile `POST /events` and the `events`
+  table with the Phase 2 event model (`event_id`/`data`/`agent_name`/
+  `duration_ms`/`token_usage`/`error` instead of `id`/`payload`/`parent_id`),
+  add a WebSocket endpoint for live event streaming to the app, run
+  search/filtering/pagination, JSONL export and import, a background
+  retention/cleanup job, consistent structured error responses.
 - **Phase 4 — App: live timeline**: subscribe to the server's WebSocket
   stream so the timeline updates live while an agent runs, add run
   search/filter in the sidebar, an expandable tree view for parent/child
@@ -229,7 +215,13 @@ export interface ChronicleRun {
   WebKitGTK on Linux, the system WebView on macOS). See
   `KNOWN_ISSUES.md` and https://tauri.app/start/prerequisites/.
 - **The SDK must work without the desktop app running**: `ChronicleTracer`
-  always tries the local server first, but falls back to writing events
-  directly into the local SQLite database (`~/.chronicle/chronicle.db` by
-  default) when the server is unreachable, so instrumentation never blocks
-  or loses data because the UI happens to be closed.
+  always tries the local server first, but falls back to writing unsent
+  events into `chronicle_runs/{run_id}.json` when the server is
+  unreachable, so instrumentation never blocks or loses data because the
+  UI happens to be closed.
+- **SDK/server schema drift (as of Phase 2)**: the SDK's event model now
+  sends `event_id`/`data`/`agent_name`/`duration_ms`/`token_usage`/`error`,
+  but the server's `POST /events` still expects the Phase 1 shape
+  (`id`/`payload`/`parent_id`). A live server will reject Phase 2 SDK
+  traffic with a validation error until Phase 3 reconciles the two. See
+  `KNOWN_ISSUES.md`.
