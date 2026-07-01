@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  sdk-tests:
+    name: SDK tests (Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install chronicle-sdk
+        working-directory: sdk
+        run: pip install -e ".[dev]"
+      - name: Run pytest
+        working-directory: sdk
+        run: pytest
+
+  server-tests:
+    name: Server tests (Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install chronicle-server
+        working-directory: server
+        run: pip install -e ".[dev]"
+      - name: Run pytest
+        working-directory: server
+        run: pytest
+
+  app-checks:
+    name: App type-check and tests (TypeScript)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: app/package-lock.json
+      - name: Install dependencies
+        working-directory: app
+        run: npm ci
+      - name: Type-check
+        working-directory: app
+        run: npx tsc --noEmit
+      - name: Run Vitest
+        working-directory: app
+        run: npx vitest run
