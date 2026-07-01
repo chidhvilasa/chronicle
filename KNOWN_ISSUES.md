@@ -16,15 +16,27 @@
 - **No authentication**: The Chronicle server has no auth layer. It's meant
   to run on `127.0.0.1` alongside the agent process being traced (see
   `SECURITY.md`).
-- **SDK/server event schema drift (as of Phase 2)**: `chronicle-sdk`'s
-  `ChronicleTracer` now buffers and POSTs events shaped like
-  `chronicle.models.ChronicleEvent` (`event_id`, `data`, `agent_name`,
-  `duration_ms`, `token_usage`, `error`), but `chronicle-server`'s
-  `POST /events` still validates against the Phase 1 shape (`id`,
-  `payload`, `parent_id`). Until Phase 3 reconciles the two schemas, a
-  running server will reject events from the current SDK with a 422 and
-  every event will fall through to the local `chronicle_runs/{run_id}.json`
-  fallback instead.
+- **App/server schema drift (as of Phase 3)**: `chronicle-server`'s
+  `POST /events` and the rest of its endpoints now match the Phase 2 SDK
+  event model (`event_id`/`data`/`agent_name`/`duration_ms`/`input_tokens`/
+  `output_tokens`/`error`, plus the new `runs` summary columns and the
+  `/runs/{id}/timeline` lane/segment shape). The desktop app
+  (`app/src/types.ts`, `app/src/api/client.ts`) has *not* been updated yet
+  and still models the Phase 1 response shape (`id`/`payload`/`parent_id`,
+  `ChronicleRun.event_count`). The app will not render real server
+  responses correctly until Phase 4 updates it.
+- **The server's default port changed to `7823`** (from `8765` in Phases
+  1–2) to match this phase's spec; `chronicle-sdk`'s
+  `ChronicleTracer.DEFAULT_SERVER_URL` and the app's
+  `DEFAULT_SERVER_URL` were both updated to match.
+- **`runs.status` has no "completed" state yet**: a run's `status` is
+  `'error'` if any of its events are `error` events, otherwise `'running'`
+  forever — there's no explicit "run finished" event/signal yet, so a
+  completed-but-error-free run still reports `status: "running"`.
+- **Timeline segments only cover `llm_call`/`tool_call`/`error`**:
+  `agent_message`, `memory_update`, and `retry` events are not represented
+  as segments in `GET /runs/{id}/timeline` yet — they're silently omitted
+  from the per-agent lanes (see `server/src/timeline.py`).
 - **Local JSON fallback is not concurrency-safe**: when the SDK falls back
   to writing `chronicle_runs/{run_id}.json` (server not running), it does a
   read-modify-write of the whole file. Multiple processes writing to the

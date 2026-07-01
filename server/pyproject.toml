@@ -4,10 +4,10 @@ build-backend = "hatchling.build"
 
 [project]
 name = "chronicle-server"
-version = "0.1.0"
+version = "0.3.0"
 description = "Local FastAPI server that stores and serves Chronicle agent traces"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "chidhvilasa" }]
 dependencies = [
@@ -29,4 +29,4 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/chronicle_server"]
+packages = ["src"]

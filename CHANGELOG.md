@@ -33,3 +33,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   `chronicle.adapters.langgraph.LangGraphAdapter`, which adds
   `on_agent_finish` handling and captures per-call duration and token usage.
   Requires Python 3.10+.
+- `chronicle-server`: rebuilt as a flat `src` package (`uvicorn src.main:app`)
+  matching the Phase 2 SDK event model end-to-end. `POST /events` now
+  accepts a batch of events and stores `event_id`/`data`/`agent_name`/
+  `duration_ms`/`input_tokens`/`output_tokens`/`error`. Added `runs` summary
+  columns (`framework`, `agent_count`, `total_tokens`, `total_cost_usd`,
+  `status`, `metadata`), recomputed from `events` on every write. Added
+  `server/src/timeline.py`, which shapes `GET /runs/{id}/timeline` into
+  per-agent lanes of `llm_call`/`tool_call`/`waiting`/`error` segments.
+  Moved the default port to `7823` (was `8765`) and restricted CORS to
+  `http://localhost:1420`. All error responses are now shaped
+  `{error, detail}`. Requires Python 3.10+.

@@ -20,8 +20,9 @@ update, error, and retry in a desktop app.
 ```
 
 - **`/sdk`** — `chronicle-sdk`, a Python package agents import to emit trace
-  events. Ships events to the local Chronicle server over HTTP; falls back to
-  writing directly to a local SQLite database if the server isn't running.
+  events. Buffers and ships events to the local Chronicle server over HTTP in
+  batches; falls back to writing unsent events to
+  `chronicle_runs/{run_id}.json` if the server isn't running.
 - **`/server`** — A FastAPI server that stores events in SQLite and serves
   them to the desktop app over REST.
 - **`/app`** — A Tauri + React + TypeScript desktop app for browsing runs,
@@ -45,7 +46,7 @@ pytest
 from chronicle import ChronicleTracer
 
 with ChronicleTracer() as tracer:
-    tracer.tool_call("search", {"query": "weather in nyc"})
+    tracer.record_event("tool_call", data={"tool_name": "search", "arguments": {"query": "weather in nyc"}})
 ```
 
 ### Server
@@ -53,7 +54,7 @@ with ChronicleTracer() as tracer:
 ```bash
 cd server
 pip install -e ".[dev]"
-uvicorn chronicle_server.main:app --host 127.0.0.1 --port 8765 --reload
+uvicorn src.main:app --host 127.0.0.1 --port 7823 --reload
 ```
 
 ### App

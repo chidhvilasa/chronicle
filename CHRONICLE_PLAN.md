@@ -115,22 +115,81 @@ sent to `POST /events` and written to `chronicle_runs/{run_id}.json`.
 
 ## 3. Server design (`/server`)
 
-FastAPI app (`server/src/chronicle_server/main.py`) backed by SQLite via
-`aiosqlite` (`server/src/chronicle_server/db.py`). Two tables: `runs`
-(derived run metadata: `id`, `started_at`, `ended_at`, `event_count`) and
-`events` (the full event log).
+FastAPI app (`server/src/main.py`), run as `uvicorn src.main:app`, listening
+on `127.0.0.1:7823` by default with CORS restricted to
+`http://localhost:1420` (the Tauri dev server). Backed by SQLite via
+`aiosqlite` (`server/src/database.py`).
+
+### Schema
+
+```sql
+CREATE TABLE runs (
+    run_id TEXT PRIMARY KEY,
+    started_at REAL NOT NULL,
+    finished_at REAL NOT NULL,
+    framework TEXT,
+    agent_count INTEGER NOT NULL DEFAULT 0,
+    total_tokens INTEGER NOT NULL DEFAULT 0,
+    total_cost_usd REAL NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'running',
+    metadata TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE TABLE events (
+    event_id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL,
+    timestamp REAL NOT NULL,
+    event_type TEXT NOT NULL,
+    agent_name TEXT,
+    duration_ms REAL,
+    input_tokens INTEGER,
+    output_tokens INTEGER,
+    data TEXT NOT NULL DEFAULT '{}',
+    error TEXT
+);
+
+CREATE INDEX idx_runs_run_id ON runs (run_id);
+CREATE INDEX idx_events_run_id ON events (run_id);
+CREATE INDEX idx_events_event_type ON events (event_type);
+```
+
+`runs` rows are never written incrementally: every `POST /events` batch
+recomputes `started_at`/`finished_at`/`agent_count`/`total_tokens`/`status`
+for each affected `run_id` directly from its rows in `events` (see
+`Database._refresh_run_aggregates`), so aggregates can't drift out of sync.
+`status` is `'error'` if any of the run's events are `error` events,
+otherwise `'running'` — there's no explicit "run finished" signal yet (see
+`KNOWN_ISSUES.md`). `total_cost_usd` and `framework` have no producer yet and
+stay at their defaults (`0`, `null`) until a future phase populates them.
+
+### Endpoints
 
 | Method | Path                   | Description                                          |
 | ------ | ---------------------- | ----------------------------------------------------- |
-| GET    | `/health`              | Liveness check                                        |
-| POST   | `/events`               | Ingest one event; upserts the parent run's metadata    |
-| GET    | `/runs`                 | List all runs, newest first                            |
+| GET    | `/health`              | Liveness check; returns `{status, version}`            |
+| POST   | `/events`               | Ingest a batch of events; returns `{count}` written    |
+| GET    | `/runs`                 | List all runs, newest first, with summary stats        |
 | GET    | `/runs/{id}/events`     | List all events for a run, chronological                |
-| GET    | `/runs/{id}/timeline`   | Chronological timeline for a run (same ordering, meant for the app's main panel — will diverge from `/events` once nesting/grouping is added) |
+| GET    | `/runs/{id}/timeline`   | Per-agent lanes of segments, shaped by `server/src/timeline.py` |
 | DELETE | `/runs/{id}`            | Delete a run and all its events                         |
 
-`GET /runs/{id}/events` and `GET /runs/{id}/timeline` both 404 with a
-human-readable message when the run doesn't exist.
+`GET /runs/{id}/events`, `GET /runs/{id}/timeline`, and `DELETE /runs/{id}`
+all 404 when the run doesn't exist. Every error response — 404s, 422
+validation errors, everything else — has the same shape:
+`{"error": "<short_code>", "detail": "<human-readable message>"}`, produced
+by global `StarletteHTTPException`/`RequestValidationError` handlers in
+`server/src/main.py`.
+
+### Timeline shaping (`server/src/timeline.py`)
+
+`build_timeline(events)` groups a run's events into one lane per
+`agent_name` (events with no `agent_name` fall into an `"unknown"` lane).
+Within each lane, `llm_call`/`tool_call`/`error` events become segments
+(`{type, start_time_ms, duration_ms, label, token_usage}`); `start_time_ms`
+is relative to the run's earliest event. Any positive gap between two
+consecutive segments in the same lane becomes a synthetic `waiting` segment
+filling that gap. `agent_message`/`memory_update`/`retry` events currently
+produce no segment (see `KNOWN_ISSUES.md`).
 
 ## 4. App design (`/app`)
 
@@ -172,6 +231,10 @@ export interface ChronicleRun {
 }
 ```
 
+> As of Phase 3 these interfaces (and `app/src/api/client.ts`) describe the
+> Phase 1 server response shape, not the current one — see the Phase 4 entry
+> below and `KNOWN_ISSUES.md`.
+
 ## 5. Phase-by-phase plan
 
 - **Phase 1 — Scaffold + repo + plan**: monorepo structure, `chronicle-sdk`
@@ -179,7 +242,7 @@ export interface ChronicleRun {
   `chronicle-server` core (FastAPI + aiosqlite, the five endpoints above),
   `chronicle-app` shell (sidebar/timeline/inspector reading from the
   server), root docs, CI.
-- **Phase 2 — Python SDK core + LangGraph adapter** *(this phase)*:
+- **Phase 2 — Python SDK core + LangGraph adapter**:
   rebuilt the event model as `chronicle.models.ChronicleEvent`/`TokenUsage`
   dataclasses; `ChronicleTracer.record_event()` buffers events and flushes
   them to the server in batches via `POST /events`, falling back to
@@ -188,16 +251,25 @@ export interface ChronicleRun {
   `on_llm_start`/`on_llm_end`/`on_tool_start`/`on_tool_end`/
   `on_agent_action`/`on_agent_finish`/`on_chain_error` with duration and
   token-usage capture; expanded test coverage (models, tracer, adapter).
-- **Phase 3 — Server hardening**: reconcile `POST /events` and the `events`
-  table with the Phase 2 event model (`event_id`/`data`/`agent_name`/
-  `duration_ms`/`token_usage`/`error` instead of `id`/`payload`/`parent_id`),
-  add a WebSocket endpoint for live event streaming to the app, run
-  search/filtering/pagination, JSONL export and import, a background
-  retention/cleanup job, consistent structured error responses.
-- **Phase 4 — App: live timeline**: subscribe to the server's WebSocket
-  stream so the timeline updates live while an agent runs, add run
-  search/filter in the sidebar, an expandable tree view for parent/child
-  events, and a syntax-highlighted JSON viewer in the inspector.
+- **Phase 3 — Chronicle server + SQLite storage** *(this phase)*: rebuilt
+  `/server` as a flat `src` package (`uvicorn src.main:app`) matching the
+  Phase 2 SDK event model end-to-end — `POST /events` now accepts a batch
+  and stores `event_id`/`data`/`agent_name`/`duration_ms`/`input_tokens`/
+  `output_tokens`/`error` (closing the schema-drift gap from Phase 2); added
+  the `runs.framework`/`agent_count`/`total_tokens`/`total_cost_usd`/
+  `status`/`metadata` summary columns, recomputed from `events` on every
+  write; added `server/src/timeline.py` to shape events into per-agent
+  lanes of `llm_call`/`tool_call`/`waiting`/`error` segments for
+  `GET /runs/{id}/timeline`; moved the default port to `7823` and restricted
+  CORS to the Tauri dev origin; unified all error responses to
+  `{error, detail}`.
+- **Phase 4 — App: reconcile client + live timeline**: update
+  `app/src/types.ts` and `app/src/api/client.ts` to match the Phase 3
+  response shapes (they still reflect the Phase 1 schema — see
+  `KNOWN_ISSUES.md`), render the new lane/segment timeline, subscribe to a
+  future WebSocket stream so it updates live while an agent runs, add run
+  search/filter in the sidebar, and a syntax-highlighted JSON viewer in the
+  inspector.
 - **Phase 5 — Replay**: step-by-step visual replay of a captured run, and a
   diff view comparing two runs (e.g. before/after a prompt change).
 - **Phase 6 — Analytics**: cost, latency, and error-rate aggregation, both
@@ -219,9 +291,10 @@ export interface ChronicleRun {
   events into `chronicle_runs/{run_id}.json` when the server is
   unreachable, so instrumentation never blocks or loses data because the
   UI happens to be closed.
-- **SDK/server schema drift (as of Phase 2)**: the SDK's event model now
-  sends `event_id`/`data`/`agent_name`/`duration_ms`/`token_usage`/`error`,
-  but the server's `POST /events` still expects the Phase 1 shape
-  (`id`/`payload`/`parent_id`). A live server will reject Phase 2 SDK
-  traffic with a validation error until Phase 3 reconciles the two. See
-  `KNOWN_ISSUES.md`.
+- **App/server schema drift (as of Phase 3)**: `app/src/types.ts` and
+  `app/src/api/client.ts` still reflect the Phase 1 server response shape
+  (`id`/`payload`/`parent_id`, `ChronicleRun.event_count`), not the Phase 3
+  shape (`event_id`/`data`/`agent_name`/`duration_ms`/`token_usage`/`error`,
+  and the new `RunOut`/`TimelineOut` fields). The app's sidebar/timeline/
+  inspector will not render real server data correctly until Phase 4
+  updates them. See `KNOWN_ISSUES.md`.

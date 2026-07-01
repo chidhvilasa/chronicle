@@ -1,6 +1,6 @@
 import type { ChronicleEvent, ChronicleRun } from "../types";
 
-const DEFAULT_SERVER_URL = "http://127.0.0.1:8765";
+const DEFAULT_SERVER_URL = "http://127.0.0.1:7823";
 
 /** Human-readable error thrown when the Chronicle server can't be reached or returns a failure. */
 export class ChronicleApiError extends Error {

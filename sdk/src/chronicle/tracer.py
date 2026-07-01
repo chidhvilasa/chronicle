@@ -11,7 +11,7 @@ import httpx
 from chronicle.models import ChronicleEvent, EventType, TokenUsage
 from chronicle.storage import DEFAULT_LOCAL_DIR, write_local_events
 
-DEFAULT_SERVER_URL = "http://127.0.0.1:8765"
+DEFAULT_SERVER_URL = "http://127.0.0.1:7823"
 DEFAULT_BATCH_SIZE = 10
 
 

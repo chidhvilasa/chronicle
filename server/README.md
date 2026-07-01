@@ -1,8 +1,8 @@
 # chronicle-server
 
-Local FastAPI server for [Chronicle](../README.md). Receives agent trace
-events from the Python SDK, stores them in SQLite, and serves them to the
-Tauri desktop app.
+Local FastAPI server for [Chronicle](../README.md). Receives batches of agent
+trace events from the Python SDK, stores them in SQLite, and serves runs,
+events, and per-agent timelines to the Tauri desktop app.
 
 ## Install
 
@@ -13,19 +13,31 @@ pip install -e ".[dev]"
 ## Run
 
 ```bash
-uvicorn chronicle_server.main:app --host 127.0.0.1 --port 8765 --reload
+uvicorn src.main:app --host 127.0.0.1 --port 7823 --reload
 ```
+
+The server listens on `127.0.0.1:7823` by default and only accepts CORS
+requests from `http://localhost:1420` (the Tauri dev server).
 
 ## Endpoints
 
-| Method | Path                     | Description                     |
-| ------ | ------------------------ | -------------------------------- |
-| GET    | `/health`                | Liveness check                   |
-| POST   | `/events`                | Ingest a trace event              |
-| GET    | `/runs`                  | List all runs                    |
-| GET    | `/runs/{id}/events`      | List events for a run             |
-| GET    | `/runs/{id}/timeline`    | Chronological timeline for a run  |
-| DELETE | `/runs/{id}`             | Delete a run and its events       |
+| Method | Path                     | Description                                       |
+| ------ | ------------------------ | -------------------------------------------------- |
+| GET    | `/health`                | Liveness check; returns `{status, version}`         |
+| POST   | `/events`                | Ingest a batch of events (up to hundreds at once)   |
+| GET    | `/runs`                  | List all runs, newest first, with summary stats     |
+| GET    | `/runs/{id}/events`      | List all events for a run, chronological            |
+| GET    | `/runs/{id}/timeline`    | Per-agent lanes of llm_call/tool_call/waiting/error segments |
+| DELETE | `/runs/{id}`             | Delete a run and its events                          |
+
+Every error response (404, 422, etc.) has the shape
+`{"error": "<short_code>", "detail": "<human-readable message>"}`.
+
+## Storage
+
+SQLite via `aiosqlite`, with two tables: `runs` (aggregate stats, recomputed
+from `events` on every write) and `events` (the full event log). See
+`src/database.py`.
 
 ## Development
 
