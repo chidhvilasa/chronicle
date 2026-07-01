@@ -1,5 +1,21 @@
 # Known Issues
 
+## v0.1.0 scope
+
+- **Replay engine is not implemented yet**: Chronicle records and displays
+  runs (timeline, inspector, diff), but there is no step-by-step "replay" of
+  a captured run — re-executing an agent's steps interactively, or stepping
+  through a run's LLM/tool calls one at a time with playback controls. See
+  `CHRONICLE_PLAN.md`'s roadmap; this is planned future work.
+- **Only a LangGraph/LangChain adapter is available**: `chronicle-sdk` ships
+  `chronicle.adapters.langgraph.LangGraphAdapter`. There is no CrewAI or
+  AutoGen adapter yet — instrumenting agents built on those frameworks
+  requires calling `ChronicleTracer.record_event()` directly rather than an
+  automatic callback integration.
+- **The desktop app doesn't bundle the server as a real sidecar**: see
+  "The Chronicle server is not a real bundled Tauri sidecar" below for the
+  full explanation and the documented workaround.
+
 ## Platform / build constraints
 
 - **Tauri/Rust system dependencies**: Building `/app` requires the Rust

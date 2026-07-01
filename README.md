@@ -9,6 +9,15 @@ understanding AI agent systems. Instrument your agent with the Python SDK,
 run the local server, and inspect every tool call, LLM call, message, memory
 update, error, and retry in a desktop app.
 
+## Screenshots
+
+> Chronicle is under active development; the images below are placeholders
+> until real screenshots are captured from a built release.
+
+| Execution timeline | Agent & tool inspector |
+| --- | --- |
+| ![Execution timeline placeholder](https://placehold.co/640x400?text=Timeline+view) | ![Inspector placeholder](https://placehold.co/640x400?text=Inspector+view) |
+
 ## Architecture
 
 ```
@@ -32,7 +41,41 @@ update, error, and retry in a desktop app.
 See [CHRONICLE_PLAN.md](./CHRONICLE_PLAN.md) for the full design and
 phase-by-phase roadmap.
 
-## Getting started
+## Installation
+
+```bash
+pip install chronicle-sdk
+```
+
+Chronicle also ships a desktop app for browsing traces — see
+[Download](#download) below. Until `chronicle-sdk` is published to PyPI, or
+if you want the latest `main`, install from source instead:
+
+```bash
+git clone https://github.com/chidhvilasa/chronicle.git
+cd chronicle/sdk
+pip install -e .
+```
+
+## Quickstart
+
+Wrap a LangGraph agent with `ChronicleTracer` and `LangGraphAdapter` — every
+tool call, LLM call, and error the graph produces is captured automatically:
+
+```python
+from chronicle import ChronicleTracer, LangGraphAdapter
+
+tracer = ChronicleTracer()
+adapter = LangGraphAdapter(tracer)
+
+graph.invoke(your_input, config={"callbacks": [adapter]})
+```
+
+Then run the Chronicle server (`uvicorn src.main:app` in `/server`, or let
+the desktop app start it for you) and open the app to see the run appear in
+the sidebar in real time.
+
+## Getting started (development)
 
 ### SDK
 
@@ -64,6 +107,12 @@ cd app
 npm install
 npm run tauri dev
 ```
+
+## Download
+
+Chronicle desktop app builds for Windows (x64), macOS (x64 + arm64), and
+Linux (x64), plus the `chronicle-sdk` Python wheel, are published on the
+[v0.1.0 release](https://github.com/chidhvilasa/chronicle/releases/tag/v0.1.0).
 
 ## Project status
 

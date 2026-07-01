@@ -6,6 +6,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-02
+
+First public release. Chronicle instruments a LangGraph agent, ships trace
+events to a local FastAPI server, and gives you a Tauri desktop app to browse
+runs, replay the execution timeline, inspect individual events/agents/tools,
+and diff two runs against each other.
+
+### Summary
+
+- **`chronicle-sdk`**: `ChronicleTracer` captures `tool_call`/`llm_call`/
+  `agent_message`/`memory_update`/`error`/`retry` events, batches them to the
+  server over HTTP, and falls back to `chronicle_runs/{run_id}.json` when the
+  server isn't reachable. `LangGraphAdapter` instruments a LangGraph/LangChain
+  graph's callbacks automatically, capturing duration and token usage.
+- **`chronicle-server`**: FastAPI + SQLite (`aiosqlite`) app exposing
+  `POST /events`, `GET /runs`, `GET /runs/{id}/events`,
+  `GET /runs/{id}/timeline`, and `DELETE /runs/{id}`, with run-level stats
+  (tokens, agent count, status) recomputed from events on every write and a
+  consistent `{error, detail}` error shape.
+- **`chronicle-app`**: a Tauri + React + TypeScript desktop app with a run
+  sidebar, an ECharts-based execution timeline (per-agent lanes, colored
+  segments, zoom/filter, token/cost summary), an Event/Agent/Tools inspector,
+  and a run-to-run diff view (summary deltas, positional event diff,
+  character-level prompt diff). The app starts/stops the local server
+  automatically and shows a human-readable banner if that fails.
+- Security: server CORS restricted to the Tauri dev origin, no secrets in the
+  repo or bundles, production builds strip `console.*`/`debugger`.
+- CI runs Python tests for `/sdk` and `/server` and TypeScript type-checking
+  plus Vitest for `/app` on every push; a tag-triggered release workflow
+  builds the desktop app for Windows/macOS/Linux and the `chronicle-sdk`
+  wheel.
+
+The detailed phase-by-phase history below has the full list of changes.
+
 ### Added
 
 - Initial monorepo scaffold: `/sdk` (chronicle-sdk Python package), `/server`
@@ -99,3 +133,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   diffing runs client-side in `computeDiff.ts`; a pair of runs where either
   side has more than 500 events shows a warning banner but still renders in
   full. Removed `panels/DiffPanel.tsx` (superseded).
+- Release prep: unified `chronicle-sdk`, `chronicle-server`, `chronicle-app`,
+  and the Tauri bundle at version `0.1.0`. Added `.github/workflows/release.yml`
+  (tag-triggered, builds Windows/macOS/Linux Tauri bundles plus the
+  `chronicle-sdk` wheel and uploads both to a GitHub Release). Configured
+  `vite.config.ts` to strip `console.*`/`debugger` from production builds.
