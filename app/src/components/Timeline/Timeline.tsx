@@ -9,6 +9,7 @@ import { TokenUsageSummary } from "./TokenUsageSummary";
 interface TimelineProps {
   runId: string | null;
   onSegmentSelect?: (segment: TimelineSegment) => void;
+  onAgentSelect?: (agentName: string) => void;
 }
 
 const SKELETON_LANE_COUNT = 3;
@@ -33,7 +34,7 @@ function hasAnySegments(lanes: TimelineLane[]): boolean {
 }
 
 /** Fetches a run's timeline and renders the token summary, controls, and swimlane chart. */
-export function Timeline({ runId, onSegmentSelect }: TimelineProps) {
+export function Timeline({ runId, onSegmentSelect, onAgentSelect }: TimelineProps) {
   const [timeline, setTimeline] = useState<TimelineData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -112,7 +113,12 @@ export function Timeline({ runId, onSegmentSelect }: TimelineProps) {
         onZoomOut={() => setZoom((z) => Math.max(z / TIMELINE_ZOOM_STEP, 1))}
         onFitToScreen={() => setZoom(1)}
       />
-      <TimelineChart lanes={applyFilter(timeline.lanes, filter)} zoom={zoom} onSegmentSelect={onSegmentSelect} />
+      <TimelineChart
+        lanes={applyFilter(timeline.lanes, filter)}
+        zoom={zoom}
+        onSegmentSelect={onSegmentSelect}
+        onAgentSelect={onAgentSelect}
+      />
     </div>
   );
 }

@@ -47,6 +47,7 @@ export interface TimelineSegment {
   duration_ms: number;
   label: string;
   token_usage: TimelineTokenUsage | null;
+  event_id: string | null;
 }
 
 export interface TimelineLane {
@@ -67,6 +68,7 @@ export interface HealthStatus {
 /** Whichever main-panel item is currently selected for the detail inspector. */
 export type DetailItem = Event | TimelineSegment;
 
+/** `Event` and `TimelineSegment` both carry `event_id`, so discriminate on `run_id` instead. */
 export function isEventDetail(item: DetailItem): item is Event {
-  return "event_id" in item;
+  return "run_id" in item;
 }

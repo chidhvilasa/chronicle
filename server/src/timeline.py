@@ -24,6 +24,7 @@ class TimelineSegment(TypedDict):
     duration_ms: float
     label: str
     token_usage: dict[str, int | None] | None
+    event_id: str | None
 
 
 class TimelineLane(TypedDict):
@@ -86,6 +87,7 @@ def _event_to_segment(event: dict[str, Any], run_start: float) -> TimelineSegmen
         "duration_ms": event.get("duration_ms") or 0.0,
         "label": label,
         "token_usage": token_usage,
+        "event_id": event.get("event_id"),
     }
 
 
@@ -107,6 +109,7 @@ def _with_waiting_segments(segments: list[TimelineSegment]) -> list[TimelineSegm
                     "duration_ms": gap,
                     "label": "waiting",
                     "token_usage": None,
+                    "event_id": None,
                 }
             )
         result.append(current)

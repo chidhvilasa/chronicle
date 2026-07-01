@@ -7,12 +7,13 @@ import { InspectorPanel } from "./panels/InspectorPanel";
 export function MainPanel() {
   const activePanel = useAppStore((state) => state.activePanel);
   const selectedRunId = useAppStore((state) => state.selectedRunId);
-  const setSelectedDetail = useAppStore((state) => state.setSelectedDetail);
+  const selectDetail = useAppStore((state) => state.selectDetail);
+  const selectAgent = useAppStore((state) => state.selectAgent);
 
   return (
     <main className="main-panel" data-testid="main-panel">
       {activePanel === "timeline" && (
-        <Timeline runId={selectedRunId} onSegmentSelect={setSelectedDetail} />
+        <Timeline runId={selectedRunId} onSegmentSelect={selectDetail} onAgentSelect={selectAgent} />
       )}
       {activePanel === "inspector" && <InspectorPanel />}
       {activePanel === "diff" && <DiffPanel />}

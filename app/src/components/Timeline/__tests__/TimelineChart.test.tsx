@@ -24,7 +24,14 @@ import { TimelineChart } from "../TimelineChart";
 const lane: TimelineLane = {
   agent_name: "agent-a",
   segments: [
-    { type: "tool_call", start_time_ms: 0, duration_ms: 100, label: "search", token_usage: null },
+    {
+      type: "tool_call",
+      start_time_ms: 0,
+      duration_ms: 100,
+      label: "search",
+      token_usage: null,
+      event_id: "evt-1",
+    },
   ],
 };
 
@@ -69,6 +76,23 @@ describe("TimelineChart", () => {
     expect(onSegmentSelect).toHaveBeenCalledWith(lane.segments[0]);
   });
 
+  it("calls onAgentSelect when a yAxis lane label is clicked", () => {
+    const onAgentSelect = vi.fn();
+    render(<TimelineChart lanes={[lane]} zoom={1} onAgentSelect={onAgentSelect} />);
+
+    const clickCall = mockChart.on.mock.calls.find((call) => call[0] === "click");
+    const handler = clickCall?.[1] as ((params: unknown) => void) | undefined;
+    handler?.({ componentType: "yAxis", name: "agent-a" });
+
+    expect(onAgentSelect).toHaveBeenCalledWith("agent-a");
+  });
+
+  it("enables triggerEvent on the yAxis so lane labels are clickable", () => {
+    render(<TimelineChart lanes={[lane]} zoom={1} />);
+    const option = mockChart.setOption.mock.calls[0][0];
+    expect(option.yAxis.triggerEvent).toBe(true);
+  });
+
   it("dispatches a dataZoom action when the zoom prop changes", () => {
     const { rerender } = render(<TimelineChart lanes={[lane]} zoom={1} />);
     mockChart.dispatchAction.mockClear();
@@ -95,6 +119,7 @@ describe("TimelineChart", () => {
         duration_ms: 5,
         label: `call-${segmentIndex}`,
         token_usage: null,
+        event_id: `evt-${laneIndex}-${segmentIndex}`,
       })),
     }));
 

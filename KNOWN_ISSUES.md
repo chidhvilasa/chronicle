@@ -58,12 +58,6 @@
     the app still works if you start the server yourself
     (`cd server && uvicorn src.main:app --port 7823`) and just let the app
     connect to `http://127.0.0.1:7823` like any other client.
-- **Timeline segments aren't individually addressable**: `GET
-  /runs/{id}/timeline` segments don't carry an `event_id` (see
-  `server/src/timeline.py`), so clicking a segment in the Timeline tab shows
-  its own label/duration/token usage in the detail inspector, but can't look
-  up the original event's full payload the way clicking a row in the
-  Inspector tab can.
 - **Diff tab is a placeholder**: run-to-run diffing is planned for a later
   phase (see `CHRONICLE_PLAN.md`); the "Diff" tab currently just says so.
 - **Settings icon has no functionality yet**: it's present in the top nav
@@ -84,6 +78,17 @@
   bundle includes chart types Chronicle doesn't use. `npm run build` warns
   about the resulting >500kB chunk. Fine for a desktop app; worth trimming
   if `/app` ever ships as a web build.
+- **No real syntax highlighting (as of Phase 6)**: the Inspector's Event tab
+  renders LLM prompts/responses and tool call JSON in a plain scrollable
+  monospace `<pre>` (`.code-block`), not a tokenized/highlighted code view —
+  no highlighting library was added. Readable, but not colorized.
+- **Agent/tool summaries treat "success" as "no `error` field" (as of Phase
+  6)**: `Inspector/summarize.ts` counts a `tool_call` as failed only when
+  the event's top-level `error` field is set; it doesn't inspect
+  `data.success` or similar SDK-side conventions, since the event schema
+  doesn't guarantee that shape. A tool that "succeeds" at the transport
+  level but reports failure only inside `data` will be counted as a
+  success.
 
 This list will grow as the project matures. If you hit something not listed
 here, please open an issue.

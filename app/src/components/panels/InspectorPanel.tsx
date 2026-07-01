@@ -7,7 +7,7 @@ import type { Event } from "../../types";
 export function InspectorPanel() {
   const selectedRunId = useAppStore((state) => state.selectedRunId);
   const selectedDetail = useAppStore((state) => state.selectedDetail);
-  const setSelectedDetail = useAppStore((state) => state.setSelectedDetail);
+  const selectDetail = useAppStore((state) => state.selectDetail);
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +58,7 @@ export function InspectorPanel() {
           <button
             type="button"
             className={selectedDetail === event ? "event-row active" : "event-row"}
-            onClick={() => setSelectedDetail(event)}
+            onClick={() => selectDetail(event)}
           >
             <span className="event-type">{event.event_type}</span>
             <span className="event-agent">{event.agent_name ?? "unknown"}</span>

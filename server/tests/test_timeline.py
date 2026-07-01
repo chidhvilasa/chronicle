@@ -64,6 +64,7 @@ def test_build_timeline_segment_fields():
     assert segment["duration_ms"] == 500
     assert segment["label"] == "gpt-4o"
     assert segment["token_usage"] == {"input_tokens": 10, "output_tokens": 5}
+    assert segment["event_id"] == "e1"
 
 
 def test_build_timeline_tool_call_label_uses_tool_name():
@@ -84,6 +85,7 @@ def test_build_timeline_infers_waiting_segment_from_gap():
     waiting = segments[1]
     assert waiting["start_time_ms"] == 100
     assert round(waiting["duration_ms"]) == 500
+    assert waiting["event_id"] is None
 
 
 def test_build_timeline_no_waiting_segment_when_events_are_contiguous():

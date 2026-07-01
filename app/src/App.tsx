@@ -1,4 +1,4 @@
-import { DetailInspector } from "./components/DetailInspector";
+import { Inspector } from "./components/Inspector";
 import { MainPanel } from "./components/MainPanel";
 import { RunList } from "./components/RunList";
 import { TopNav } from "./components/TopNav";
@@ -19,7 +19,7 @@ function App() {
       <div className="app-body">
         <RunList />
         <MainPanel />
-        <DetailInspector />
+        <Inspector />
       </div>
     </div>
   );

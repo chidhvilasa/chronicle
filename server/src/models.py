@@ -81,6 +81,7 @@ class TimelineSegmentOut(BaseModel):
     duration_ms: float
     label: str
     token_usage: dict[str, int | None] | None = None
+    event_id: str | None = None
 
 
 class TimelineLaneOut(BaseModel):

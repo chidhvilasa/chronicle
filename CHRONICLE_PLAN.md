@@ -185,12 +185,15 @@ by global `StarletteHTTPException`/`RequestValidationError` handlers in
 `build_timeline(events)` groups a run's events into one lane per
 `agent_name` (events with no `agent_name` fall into an `"unknown"` lane).
 Within each lane, `llm_call`/`tool_call`/`retry`/`error` events become
-segments (`{type, start_time_ms, duration_ms, label, token_usage}`);
+segments (`{type, start_time_ms, duration_ms, label, token_usage, event_id}`);
 `start_time_ms` is relative to the run's earliest event. `retry` segments
 label from `data["reason"]` (falling back to `"retry"`). Any positive gap
 between two consecutive segments in the same lane becomes a synthetic
-`waiting` segment filling that gap. `agent_message`/`memory_update` events
-currently produce no segment (see `KNOWN_ISSUES.md`).
+`waiting` segment filling that gap (`event_id: null`, since it isn't backed
+by a real event). Every other segment carries its source event's `event_id`
+so the app can look up the full event for the Inspector's Event tab.
+`agent_message`/`memory_update` events currently produce no segment (see
+`KNOWN_ISSUES.md`).
 
 ## 4. App design (`/app`)
 
@@ -252,6 +255,23 @@ as `ChronicleApiError.message`, parsed from the server's
 - **`TimelineControls.tsx`**: zoom in/out/fit-to-screen buttons and the
   filter dropdown; purely presentational, driven by props from `Timeline.tsx`.
 
+### Inspector (`app/src/components/Inspector/`)
+
+The collapsible right panel. `Inspector.tsx` fetches `GET /runs/{id}/events`
+for the selected run and renders an Event/Agent/Tools tab bar; each tab's
+selection lives in its own store field (`selectedDetail`/`selectedAgentName`/
+`selectedToolName`) so switching tabs never loses the other tabs' state.
+`EventInspector.tsx` renders full detail for the selected event or timeline
+segment (segments resolve to their source event via `event_id`, falling back
+to the segment's own summary if the event can't be found — e.g. synthetic
+`waiting` segments have no `event_id`). `AgentInspector.tsx` and
+`ToolInspector.tsx` render aggregate stats computed by pure functions in
+`summarize.ts` (`summarizeAgent`, `summarizeTools`) over the run's full event
+list — no additional server endpoints needed. Prompt/response and JSON
+payloads render in a plain scrollable monospace `.code-block`, not a real
+syntax-highlighted code view (no highlighting library is included yet; see
+`KNOWN_ISSUES.md`).
+
 ### TypeScript interfaces (`app/src/types/index.ts`)
 
 ```typescript
@@ -276,6 +296,7 @@ export type TimelineSegmentType = "llm_call" | "tool_call" | "waiting" | "error"
 export interface TimelineSegment {
   type: TimelineSegmentType; start_time_ms: number; duration_ms: number;
   label: string; token_usage: { input_tokens: number | null; output_tokens: number | null } | null;
+  event_id: string | null;
 }
 
 export interface TimelineLane {
@@ -350,19 +371,39 @@ either way).
   segments instead of being silently dropped. Loading shows skeleton lane
   bars; a run with no segments shows "No events recorded for this run.";
   fetch failures show a human-readable message with a Retry button.
-- **Phase 6 — Replay & live updates**: subscribe to a future WebSocket
-  stream so the timeline updates live while an agent runs; step-by-step
-  visual replay of a captured run; a real diff view comparing two runs
-  (e.g. before/after a prompt change) to replace the Diff tab's placeholder;
-  run search/filter in the sidebar.
-- **Phase 7 — Analytics**: latency and error-rate aggregation (beyond the
-  Phase 5 token/cost summary), both per-run and across all runs, surfaced
-  as charts in the app.
-- **Phase 8 — Packaging & distribution**: publish `chronicle-sdk` to PyPI,
-  build signed Tauri installers for macOS/Windows/Linux with auto-update.
-- **Phase 9 — Polish & hardening**: accessibility pass, human-readable error
-  handling audit across the whole app, full test coverage review,
-  performance profiling of the app against large runs, a public docs site.
+- **Phase 6 — Agent inspector + tool inspector**: rebuilt the right panel as
+  `app/src/components/Inspector/` with an Event/Agent/Tools tab bar
+  (`Inspector.tsx`) that preserves the last selection per tab
+  (`useAppStore`'s `inspectorTab`/`selectedDetail`/`selectedAgentName`/
+  `selectedToolName`). `EventInspector.tsx` shows full detail for the
+  selected timeline segment or event row — prompt/response for `llm_call`,
+  arguments/result/status for `tool_call`, message/traceback/agent for
+  `error` — resolving a clicked segment to its full event via the new
+  `event_id` field threaded through `server/src/timeline.py`. Clicking an
+  agent's lane header in the Timeline (`TimelineChart.tsx`'s `yAxis`
+  `triggerEvent`) opens `AgentInspector.tsx` (LLM/tool call counts, total
+  tokens, error count, average LLM latency, tool usage breakdown).
+  `ToolInspector.tsx` shows every tool used in the run (call count, success
+  rate, avg latency, tokens) with a click-through per-call list. Both are
+  driven by pure functions in `Inspector/summarize.ts`.
+- **Phase 7 — Execution diff**: `app/src/components/Diff/` replaces the Diff
+  tab's placeholder — two run-selector dropdowns (can't pick the same run
+  twice), a side-by-side summary (duration/tokens/cost/errors/tool calls,
+  deltas colored green/red), a positional event-by-event diff list
+  (same/different/missing-in-other-run rows), and a character-level prompt
+  diff (via the `diff` package) for `llm_call` events at the same position
+  in both runs. All diffing happens client-side; a run pair with either run
+  over 500 events shows a warning banner but still renders.
+- **Phase 8 — Release v0.1.0**: unified all package versions at `0.1.0`;
+  added `.github/workflows/release.yml` (tag-triggered Tauri builds for
+  Windows/macOS/Linux plus a `chronicle-sdk` wheel, uploaded to a GitHub
+  Release); security review (no secrets, CORS restricted, prod console
+  stripped); README/CHANGELOG/KNOWN_ISSUES brought up to date for a public
+  v0.1.0 tag.
+- **Future work**: live WebSocket timeline updates, step-by-step visual
+  replay, run search/filter in the sidebar, latency/error-rate analytics
+  dashboards, CrewAI/AutoGen adapters, an accessibility pass, and a public
+  docs site remain unscheduled beyond v0.1.0.
 
 ## 6. Known constraints
 

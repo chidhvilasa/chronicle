@@ -29,6 +29,9 @@ describe("useAppStore", () => {
     expect(state.error).toBeNull();
     expect(state.activePanel).toBe("timeline");
     expect(state.selectedDetail).toBeNull();
+    expect(state.inspectorTab).toBe("event");
+    expect(state.selectedAgentName).toBeNull();
+    expect(state.selectedToolName).toBeNull();
   });
 
   it("setRuns replaces the run list", () => {
@@ -36,8 +39,8 @@ describe("useAppStore", () => {
     expect(useAppStore.getState().runs).toEqual([run]);
   });
 
-  it("selectRun sets selectedRunId and clears selectedDetail", () => {
-    useAppStore.getState().setSelectedDetail({
+  it("selectRun sets selectedRunId and clears selectedDetail/selectedAgentName/selectedToolName", () => {
+    useAppStore.getState().selectDetail({
       event_id: "evt-1",
       run_id: "run-1",
       timestamp: 1000,
@@ -49,11 +52,15 @@ describe("useAppStore", () => {
       data: {},
       error: null,
     });
+    useAppStore.getState().selectAgent("agent-a");
+    useAppStore.getState().selectTool("search");
 
     useAppStore.getState().selectRun("run-1");
 
     expect(useAppStore.getState().selectedRunId).toBe("run-1");
     expect(useAppStore.getState().selectedDetail).toBeNull();
+    expect(useAppStore.getState().selectedAgentName).toBeNull();
+    expect(useAppStore.getState().selectedToolName).toBeNull();
   });
 
   it("setLoading and setError update independently", () => {
@@ -67,5 +74,35 @@ describe("useAppStore", () => {
   it("setActivePanel switches the active panel", () => {
     useAppStore.getState().setActivePanel("diff");
     expect(useAppStore.getState().activePanel).toBe("diff");
+  });
+
+  it("selectDetail sets selectedDetail and switches inspectorTab to event", () => {
+    useAppStore.getState().setInspectorTab("agent");
+    useAppStore.getState().selectDetail({
+      type: "tool_call",
+      start_time_ms: 0,
+      duration_ms: 10,
+      label: "search",
+      token_usage: null,
+      event_id: "evt-1",
+    });
+
+    expect(useAppStore.getState().inspectorTab).toBe("event");
+    expect(useAppStore.getState().selectedDetail).not.toBeNull();
+  });
+
+  it("selectAgent sets selectedAgentName and switches inspectorTab to agent", () => {
+    useAppStore.getState().selectAgent("agent-a");
+
+    expect(useAppStore.getState().selectedAgentName).toBe("agent-a");
+    expect(useAppStore.getState().inspectorTab).toBe("agent");
+  });
+
+  it("selectTool sets selectedToolName without changing inspectorTab", () => {
+    useAppStore.getState().setInspectorTab("tools");
+    useAppStore.getState().selectTool("search");
+
+    expect(useAppStore.getState().selectedToolName).toBe("search");
+    expect(useAppStore.getState().inspectorTab).toBe("tools");
   });
 });

@@ -337,6 +337,133 @@
   color: #b00020;
 }
 
+/* Inspector (Event / Agent / Tools) */
+
+.inspector-tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid #d0d0d0;
+}
+
+.inspector-tab {
+  border: none;
+  background: none;
+  padding: 0.3rem 0.6rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.inspector-tab.active {
+  border-bottom: 2px solid #396cd8;
+  font-weight: 600;
+}
+
+.event-type-badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 0.1rem 0.5rem;
+  border-radius: 4px;
+  background-color: #eef1fb;
+  margin-bottom: 0.5rem;
+}
+
+.event-meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.15rem 0.5rem;
+  font-size: 0.85rem;
+  margin: 0.5rem 0;
+}
+
+.event-meta dt {
+  color: #555;
+}
+
+.event-meta dd {
+  margin: 0;
+}
+
+.code-block {
+  max-height: 220px;
+  overflow: auto;
+  background-color: #f6f6f6;
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  padding: 0.5rem;
+  font-family: monospace;
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.status-success {
+  color: #2e9e4f;
+}
+
+.status-failed {
+  color: #b00020;
+}
+
+.tool-usage-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tool-usage-list li {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.2rem 0;
+  font-size: 0.85rem;
+}
+
+.tool-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.tool-table th,
+.tool-table td {
+  text-align: left;
+  padding: 0.3rem 0.4rem;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.tool-row {
+  cursor: pointer;
+}
+
+.tool-row:hover {
+  background-color: #e8e8e8;
+}
+
+.tool-row.active {
+  background-color: #dde4ff;
+}
+
+.tool-call-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tool-call-list li {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid #eee;
+}
+
+.tool-call-failed {
+  color: #b00020;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     color: #f6f6f6;
@@ -380,5 +507,39 @@
   .timeline-skeleton-lane {
     background: linear-gradient(90deg, #3a3a3a 25%, #454545 50%, #3a3a3a 75%);
     background-size: 200% 100%;
+  }
+
+  .inspector-tabs {
+    border-color: #4a4a4a;
+  }
+
+  .event-type-badge {
+    background-color: #2a2f4a;
+  }
+
+  .event-meta dt {
+    color: #bbb;
+  }
+
+  .code-block {
+    background-color: #1f1f1f;
+    border-color: #4a4a4a;
+  }
+
+  .tool-table th,
+  .tool-table td {
+    border-color: #4a4a4a;
+  }
+
+  .tool-row:hover {
+    background-color: #3a3a3a;
+  }
+
+  .tool-row.active {
+    background-color: #394268;
+  }
+
+  .tool-call-list li {
+    border-color: #3a3a3a;
   }
 }

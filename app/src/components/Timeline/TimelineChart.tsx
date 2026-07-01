@@ -13,6 +13,7 @@ interface TimelineChartProps {
   lanes: TimelineLane[];
   zoom: number;
   onSegmentSelect?: (segment: TimelineSegment) => void;
+  onAgentSelect?: (agentName: string) => void;
 }
 
 interface SegmentDatum {
@@ -124,11 +125,13 @@ function formatTooltip(datum: SegmentDatum): string {
 }
 
 /** Horizontal swimlane timeline: one lane per agent, rendered via an ECharts custom series. */
-export function TimelineChart({ lanes, zoom, onSegmentSelect }: TimelineChartProps) {
+export function TimelineChart({ lanes, zoom, onSegmentSelect, onAgentSelect }: TimelineChartProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<ECharts | null>(null);
   const onSegmentSelectRef = useRef(onSegmentSelect);
   onSegmentSelectRef.current = onSegmentSelect;
+  const onAgentSelectRef = useRef(onAgentSelect);
+  onAgentSelectRef.current = onAgentSelect;
 
   useEffect(() => {
     if (containerRef.current === null) return;
@@ -136,6 +139,10 @@ export function TimelineChart({ lanes, zoom, onSegmentSelect }: TimelineChartPro
     chartRef.current = chart;
 
     chart.on("click", (params) => {
+      if (params.componentType === "yAxis") {
+        onAgentSelectRef.current?.(params.name);
+        return;
+      }
       const datum = params.data as SegmentDatum | undefined;
       if (datum) onSegmentSelectRef.current?.(datum.segment);
     });
@@ -169,6 +176,7 @@ export function TimelineChart({ lanes, zoom, onSegmentSelect }: TimelineChartPro
           type: "category",
           data: lanes.map((lane) => lane.agent_name),
           inverse: true,
+          triggerEvent: true,
         },
         dataZoom: [{ type: "inside", xAxisIndex: 0, filterMode: "none" }],
         series: [

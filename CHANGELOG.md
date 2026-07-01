@@ -72,3 +72,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   Loading shows skeleton lane bars; a run with no segments shows "No events
   recorded for this run."; fetch failures show a human-readable message
   with a Retry button. Added `echarts` as a dependency.
+- `chronicle-server`: added `event_id` to `GET /runs/{id}/timeline` segments
+  (`server/src/timeline.py`, `server/src/models.py`) so the app can resolve
+  a clicked segment back to its full event.
+- `chronicle-app`: rebuilt the right panel as `app/src/components/Inspector/`
+  with an Event/Agent/Tools tab bar that preserves each tab's last selection
+  independently (`useAppStore`'s `inspectorTab`/`selectedAgentName`/
+  `selectedToolName`). `EventInspector.tsx` shows full detail per event type
+  (prompt/response for `llm_call`, arguments/result/status for `tool_call`,
+  message/traceback/agent for `error`). Clicking an agent's lane header in
+  the Timeline chart (new `TimelineChart` `yAxis` `triggerEvent` +
+  `onAgentSelect`) opens `AgentInspector.tsx` (call counts, tokens, errors,
+  average LLM latency, tool usage). `ToolInspector.tsx` lists every tool
+  used in the run with success rate/latency/tokens and an expandable
+  per-call list. Both are computed by pure functions in
+  `Inspector/summarize.ts`. Removed `DetailInspector.tsx` (superseded).

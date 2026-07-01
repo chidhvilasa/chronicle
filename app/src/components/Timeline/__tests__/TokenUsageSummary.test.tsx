@@ -6,7 +6,19 @@ import type { TimelineLane } from "../../../types";
 describe("TokenUsageSummary", () => {
   it("shows zero totals and zero cost when there is no token usage", () => {
     const lanes: TimelineLane[] = [
-      { agent_name: "agent-a", segments: [{ type: "tool_call", start_time_ms: 0, duration_ms: 10, label: "search", token_usage: null }] },
+      {
+        agent_name: "agent-a",
+        segments: [
+          {
+            type: "tool_call",
+            start_time_ms: 0,
+            duration_ms: 10,
+            label: "search",
+            token_usage: null,
+            event_id: "evt-1",
+          },
+        ],
+      },
     ];
     render(<TokenUsageSummary lanes={lanes} />);
 
@@ -27,6 +39,7 @@ describe("TokenUsageSummary", () => {
             duration_ms: 100,
             label: "gpt-4o",
             token_usage: { input_tokens: 1000, output_tokens: 500 },
+            event_id: "evt-1",
           },
         ],
       },
@@ -39,6 +52,7 @@ describe("TokenUsageSummary", () => {
             duration_ms: 100,
             label: "gpt-4o",
             token_usage: { input_tokens: 2000, output_tokens: 1000 },
+            event_id: "evt-2",
           },
         ],
       },
