@@ -24,9 +24,9 @@
   `'error'` if any of its events are `error` events, otherwise `'running'`
   forever — there's no explicit "run finished" event/signal yet, so a
   completed-but-error-free run still reports `status: "running"`.
-- **Timeline segments only cover `llm_call`/`tool_call`/`error`**:
-  `agent_message`, `memory_update`, and `retry` events are not represented
-  as segments in `GET /runs/{id}/timeline` yet — they're silently omitted
+- **Timeline segments only cover `llm_call`/`tool_call`/`retry`/`error`**:
+  `agent_message` and `memory_update` events are not represented as
+  segments in `GET /runs/{id}/timeline` yet — they're silently omitted
   from the per-agent lanes (see `server/src/timeline.py`).
 - **Local JSON fallback is not concurrency-safe**: when the SDK falls back
   to writing `chronicle_runs/{run_id}.json` (server not running), it does a
@@ -68,6 +68,22 @@
   phase (see `CHRONICLE_PLAN.md`); the "Diff" tab currently just says so.
 - **Settings icon has no functionality yet**: it's present in the top nav
   per this phase's spec but doesn't open anything.
+- **Token cost estimate is a flat-rate approximation (as of Phase 5)**: the
+  timeline's `TokenUsageSummary` multiplies token counts by fixed
+  `COST_PER_INPUT_TOKEN_USD`/`COST_PER_OUTPUT_TOKEN_USD` constants
+  (`app/src/config`), not the real pricing of whichever model actually
+  produced the tokens — it's a rough ballpark, not an accurate bill.
+- **Timeline zoom is a fixed step, not free drag-zoom**: the zoom in/out/fit
+  buttons dispatch a centered ECharts `dataZoom` window based on a
+  multiplier (`TIMELINE_ZOOM_STEP`/`TIMELINE_MAX_ZOOM`); mouse-wheel zoom on
+  the chart itself works too (ECharts' built-in `inside` `dataZoom`), but
+  there's no click-drag-to-select-range zoom UI yet.
+- **echarts is bundled in full**: `TimelineChart.tsx` does
+  `import * as echarts from "echarts"` rather than the tree-shaken
+  `echarts/core` + explicit chart/component imports, so the production
+  bundle includes chart types Chronicle doesn't use. `npm run build` warns
+  about the resulting >500kB chunk. Fine for a desktop app; worth trimming
+  if `/app` ever ships as a web build.
 
 This list will grow as the project matures. If you hit something not listed
 here, please open an issue.

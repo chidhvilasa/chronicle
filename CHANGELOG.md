@@ -58,3 +58,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   child process on app launch/exit, surfacing startup failures as a UI
   banner via a `chronicle-server-error` event — not a bundled Tauri
   sidecar binary (see `KNOWN_ISSUES.md`).
+- `chronicle-server`/`chronicle-app`: added `retry` as a fourth timeline
+  segment type end-to-end (`server/src/timeline.py`, `server/src/models.py`,
+  `app/src/types`) so retries render instead of being silently dropped.
+- `chronicle-app`: replaced the flat `TimelinePanel` event list with
+  `app/src/components/Timeline/` — an ECharts `custom`-series swimlane
+  chart (`TimelineChart.tsx`, one lane per agent, colored
+  `llm_call`/`tool_call`/`waiting`/`error`/`retry` segments, hover
+  tooltips, click-to-inspect), a `TokenUsageSummary` bar (total
+  input/output tokens and an estimated cost via configurable
+  `COST_PER_INPUT_TOKEN_USD`/`COST_PER_OUTPUT_TOKEN_USD` constants), and
+  `TimelineControls` (zoom in/out/fit, an all/llm/tools/errors filter).
+  Loading shows skeleton lane bars; a run with no segments shows "No events
+  recorded for this run."; fetch failures show a human-readable message
+  with a Retry button. Added `echarts` as a dependency.

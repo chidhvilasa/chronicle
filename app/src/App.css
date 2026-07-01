@@ -217,50 +217,86 @@
   color: #555;
 }
 
-/* Timeline panel */
+/* Timeline (execution timeline UI) */
 
-.timeline-lane {
-  margin-bottom: 0.75rem;
+.timeline-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 0.5rem;
 }
 
-.timeline-lane-label {
-  font-weight: 600;
-  margin-bottom: 0.25rem;
+.token-usage-summary {
+  display: flex;
+  gap: 1.25rem;
+  font-size: 0.85rem;
+  padding: 0.4rem 0.5rem;
+  background-color: #eef1fb;
+  border-radius: 6px;
 }
 
-.timeline-lane-segments {
+.timeline-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.timeline-zoom-controls {
   display: flex;
   gap: 0.25rem;
-  flex-wrap: wrap;
 }
 
-.timeline-segment {
-  border: none;
+.timeline-zoom-controls button {
+  border: 1px solid #d0d0d0;
+  background: none;
   border-radius: 4px;
-  padding: 0.3rem 0.5rem;
+  width: 1.75rem;
+  height: 1.75rem;
   cursor: pointer;
-  font-size: 0.8rem;
 }
 
-.segment-llm_call {
-  background-color: #dbe9ff;
+.timeline-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
 }
 
-.segment-tool_call {
-  background-color: #d8f5e0;
+.timeline-chart {
+  flex: 1 1 auto;
+  min-height: 240px;
 }
 
-.segment-error {
-  background-color: #f8d7da;
+.timeline-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
 }
 
-.segment-waiting {
-  background-color: #ececec;
-  color: #888;
+.timeline-skeleton-lane {
+  height: 28px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #ececec 25%, #f5f5f5 50%, #ececec 75%);
+  background-size: 200% 100%;
+  animation: timeline-skeleton-shimmer 1.2s ease-in-out infinite;
 }
 
-.timeline-segment.active {
-  outline: 2px solid #396cd8;
+@keyframes timeline-skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.panel-error-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
 }
 
 /* Inspector panel (event list) */
@@ -330,5 +366,19 @@
   .event-timestamp,
   .panel-empty {
     color: #bbb;
+  }
+
+  .token-usage-summary {
+    background-color: #2a2f4a;
+  }
+
+  .timeline-zoom-controls button {
+    border-color: #4a4a4a;
+    color: #f6f6f6;
+  }
+
+  .timeline-skeleton-lane {
+    background: linear-gradient(90deg, #3a3a3a 25%, #454545 50%, #3a3a3a 75%);
+    background-size: 200% 100%;
   }
 }

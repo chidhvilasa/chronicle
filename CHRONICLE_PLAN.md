@@ -184,12 +184,13 @@ by global `StarletteHTTPException`/`RequestValidationError` handlers in
 
 `build_timeline(events)` groups a run's events into one lane per
 `agent_name` (events with no `agent_name` fall into an `"unknown"` lane).
-Within each lane, `llm_call`/`tool_call`/`error` events become segments
-(`{type, start_time_ms, duration_ms, label, token_usage}`); `start_time_ms`
-is relative to the run's earliest event. Any positive gap between two
-consecutive segments in the same lane becomes a synthetic `waiting` segment
-filling that gap. `agent_message`/`memory_update`/`retry` events currently
-produce no segment (see `KNOWN_ISSUES.md`).
+Within each lane, `llm_call`/`tool_call`/`retry`/`error` events become
+segments (`{type, start_time_ms, duration_ms, label, token_usage}`);
+`start_time_ms` is relative to the run's earliest event. `retry` segments
+label from `data["reason"]` (falling back to `"retry"`). Any positive gap
+between two consecutive segments in the same lane becomes a synthetic
+`waiting` segment filling that gap. `agent_message`/`memory_update` events
+currently produce no segment (see `KNOWN_ISSUES.md`).
 
 ## 4. App design (`/app`)
 
@@ -206,11 +207,11 @@ Tauri + React + TypeScript desktop app, three-panel layout under a top nav:
   Instrument your agent with the Chronicle SDK." Clicking a card selects
   the run.
 - **Main panel** (`app/src/components/MainPanel.tsx`): renders whichever tab
-  is active — `TimelinePanel` (per-agent lanes/segments from
-  `GET /runs/{id}/timeline`), `InspectorPanel` (flat chronological event
-  list from `GET /runs/{id}/events`), or `DiffPanel` (placeholder; real
-  diffing is a later phase). Clicking a segment or event row sets it as the
-  selected detail item.
+  is active — `Timeline` (`app/src/components/Timeline/`, an ECharts
+  swimlane chart of `GET /runs/{id}/timeline`), `InspectorPanel` (flat
+  chronological event list from `GET /runs/{id}/events`), or `DiffPanel`
+  (placeholder; real diffing is a later phase). Clicking a segment or event
+  row sets it as the selected detail item.
 - **Right panel, 320px, collapsible** (`app/src/components/DetailInspector.tsx`):
   shows the full JSON of whichever event or segment is currently selected.
 
@@ -222,6 +223,34 @@ The app talks to the server exclusively over its REST API
 has a `FETCH_TIMEOUT_MS` (5s) timeout via `AbortController`; failures surface
 as `ChronicleApiError.message`, parsed from the server's
 `{error, detail}` body when available, never a raw stack trace.
+
+### Execution timeline (`app/src/components/Timeline/`)
+
+- **`Timeline.tsx`**: fetches `GET /runs/{id}/timeline` for the selected run
+  and owns loading/empty/error UI state, plus the segment-type filter
+  ("all"/"llm"/"tools"/"errors") and zoom level. Loading renders skeleton
+  lane bars; a run with no segments in any lane renders "No events recorded
+  for this run."; a fetch failure renders `ChronicleApiError.message` with a
+  Retry button that re-fetches.
+- **`TimelineChart.tsx`**: the actual swimlane chart, built on an Apache
+  ECharts `custom` series (not React Flow — a `renderItem` callback draws
+  one rect per segment, the standard ECharts Gantt-chart pattern), with one
+  `yAxis` category per agent lane and a `value`-type `xAxis` in milliseconds
+  from the run's start. Segment colors: `llm_call` blue, `tool_call` orange,
+  `waiting` translucent gray, `error` red, `retry` yellow. Hovering shows a
+  tooltip (event type, agent, duration, tokens, and the tool/model name
+  where applicable); clicking calls `onSegmentSelect(segment)`. Zoom is
+  implemented via ECharts' `dataZoom`, dispatched imperatively when the
+  `zoom` prop changes. `echarts.init`/`dispose` are scoped to mount/unmount
+  so re-renders reuse the same chart instance via `setOption`.
+- **`TokenUsageSummary.tsx`**: sums `token_usage.input_tokens`/
+  `output_tokens` across every segment in every lane and renders total
+  input/output tokens plus an estimated cost, using
+  `COST_PER_INPUT_TOKEN_USD`/`COST_PER_OUTPUT_TOKEN_USD` (see
+  `app/src/config`) — configurable constants, not hardcoded in the
+  component.
+- **`TimelineControls.tsx`**: zoom in/out/fit-to-screen buttons and the
+  filter dropdown; purely presentational, driven by props from `Timeline.tsx`.
 
 ### TypeScript interfaces (`app/src/types/index.ts`)
 
@@ -242,7 +271,7 @@ export interface Run {
   total_cost_usd: number; status: string; metadata: Record<string, unknown>;
 }
 
-export type TimelineSegmentType = "llm_call" | "tool_call" | "waiting" | "error";
+export type TimelineSegmentType = "llm_call" | "tool_call" | "waiting" | "error" | "retry";
 
 export interface TimelineSegment {
   type: TimelineSegmentType; start_time_ms: number; duration_ms: number;
@@ -298,7 +327,7 @@ either way).
   `GET /runs/{id}/timeline`; moved the default port to `7823` and restricted
   CORS to the Tauri dev origin; unified all error responses to
   `{error, detail}`.
-- **Phase 4 — Tauri app shell + run list** *(this phase)*: rebuilt
+- **Phase 4 — Tauri app shell + run list**: rebuilt
   `app/src/types/index.ts` and `app/src/api/client.ts` to match the Phase 3
   server response shapes field-for-field (closing the Phase 3 drift gap),
   with `AbortController`-based 5s timeouts on every request. Added the
@@ -309,16 +338,29 @@ either way).
   and kill the server as a child process on launch/exit, with a
   `chronicle-server-error` event surfaced as a UI banner on failure (not a
   bundled sidecar binary — see `KNOWN_ISSUES.md`).
-- **Phase 5 — Replay & live updates**: subscribe to a future WebSocket
+- **Phase 5 — Execution timeline UI** *(this phase)*: replaced the flat
+  `TimelinePanel` list with `app/src/components/Timeline/` — an ECharts
+  `custom`-series swimlane chart (one lane per agent, colored segments per
+  type, hover tooltips, click-to-inspect), a `TokenUsageSummary` bar (total
+  input/output tokens and an estimated cost via configurable
+  `COST_PER_INPUT_TOKEN_USD`/`COST_PER_OUTPUT_TOKEN_USD` constants), and
+  `TimelineControls` (zoom in/out/fit, an all/llm/tools/errors filter).
+  Added `retry` as a fourth segment type end-to-end (`server/src/timeline.py`,
+  `server/src/models.py`, `app/src/types`) so retries render as yellow
+  segments instead of being silently dropped. Loading shows skeleton lane
+  bars; a run with no segments shows "No events recorded for this run.";
+  fetch failures show a human-readable message with a Retry button.
+- **Phase 6 — Replay & live updates**: subscribe to a future WebSocket
   stream so the timeline updates live while an agent runs; step-by-step
   visual replay of a captured run; a real diff view comparing two runs
-  (e.g. before/after a prompt change) to replace the Phase 4 placeholder;
-  run search/filter in the sidebar; a syntax-highlighted JSON viewer.
-- **Phase 6 — Analytics**: cost, latency, and error-rate aggregation, both
-  per-run and across all runs, surfaced as charts in the app.
-- **Phase 7 — Packaging & distribution**: publish `chronicle-sdk` to PyPI,
+  (e.g. before/after a prompt change) to replace the Diff tab's placeholder;
+  run search/filter in the sidebar.
+- **Phase 7 — Analytics**: latency and error-rate aggregation (beyond the
+  Phase 5 token/cost summary), both per-run and across all runs, surfaced
+  as charts in the app.
+- **Phase 8 — Packaging & distribution**: publish `chronicle-sdk` to PyPI,
   build signed Tauri installers for macOS/Windows/Linux with auto-update.
-- **Phase 8 — Polish & hardening**: accessibility pass, human-readable error
+- **Phase 9 — Polish & hardening**: accessibility pass, human-readable error
   handling audit across the whole app, full test coverage review,
   performance profiling of the app against large runs, a public docs site.
 
@@ -342,3 +384,8 @@ either way).
   bundled sidecar (future work). The documented fallback — run the server
   yourself and let the app connect over HTTP — always works regardless. See
   `KNOWN_ISSUES.md`.
+- **Token cost estimates are a rough constant, not real pricing**: the
+  timeline's cost estimate multiplies token counts by fixed
+  `COST_PER_INPUT_TOKEN_USD`/`COST_PER_OUTPUT_TOKEN_USD` constants
+  (`app/src/config`), not the actual per-model pricing of whatever LLM
+  provider produced the tokens. Treat it as a ballpark, not a bill.

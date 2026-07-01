@@ -1,7 +1,7 @@
 """Shapes raw event rows into a per-agent lane timeline for the frontend.
 
-Only `llm_call`, `tool_call`, and `error` events become visible segments;
-`agent_message`, `memory_update`, and `retry` events don't represent
+Only `llm_call`, `tool_call`, `retry`, and `error` events become visible
+segments; `agent_message` and `memory_update` events don't represent
 durations of work and are currently omitted from the timeline (see
 KNOWN_ISSUES.md). Gaps between consecutive segments in the same lane become
 synthetic `waiting` segments.
@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any, TypedDict
 
-_SEGMENT_EVENT_TYPES = {"llm_call", "tool_call", "error"}
+_SEGMENT_EVENT_TYPES = {"llm_call", "tool_call", "retry", "error"}
 # Timestamps are floats, so back-to-back events can produce a gap of a few
 # nanoseconds of floating-point noise instead of exactly zero; ignore gaps
 # below this threshold rather than rendering a near-invisible waiting segment.
@@ -66,6 +66,8 @@ def _event_to_segment(event: dict[str, Any], run_start: float) -> TimelineSegmen
         label = data.get("model", "llm_call")
     elif event_type == "tool_call":
         label = data.get("tool_name", "tool_call")
+    elif event_type == "retry":
+        label = data.get("reason", "retry")
     else:
         label = event.get("error") or "error"
 

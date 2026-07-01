@@ -34,7 +34,7 @@ export interface Run {
   metadata: Record<string, unknown>;
 }
 
-export type TimelineSegmentType = "llm_call" | "tool_call" | "waiting" | "error";
+export type TimelineSegmentType = "llm_call" | "tool_call" | "waiting" | "error" | "retry";
 
 export interface TimelineTokenUsage {
   input_tokens: number | null;

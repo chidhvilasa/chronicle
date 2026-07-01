@@ -6,3 +6,15 @@ export const HEALTH_CHECK_INTERVAL_MS = 5000;
 
 /** Timeout applied to every fetch call to the Chronicle server, in milliseconds. */
 export const FETCH_TIMEOUT_MS = 5000;
+
+/** Estimated cost per input token, in USD, for the timeline's token usage summary. */
+export const COST_PER_INPUT_TOKEN_USD = 0.000003;
+
+/** Estimated cost per output token, in USD, for the timeline's token usage summary. */
+export const COST_PER_OUTPUT_TOKEN_USD = 0.000015;
+
+/** Maximum zoom multiplier the timeline's zoom-in button can reach. */
+export const TIMELINE_MAX_ZOOM = 8;
+
+/** Multiplier applied to the current zoom level per zoom in/out click. */
+export const TIMELINE_ZOOM_STEP = 1.5;

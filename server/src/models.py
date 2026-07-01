@@ -76,7 +76,7 @@ class RunOut(BaseModel):
 
 
 class TimelineSegmentOut(BaseModel):
-    type: Literal["llm_call", "tool_call", "waiting", "error"]
+    type: Literal["llm_call", "tool_call", "waiting", "error", "retry"]
     start_time_ms: float
     duration_ms: float
     label: str

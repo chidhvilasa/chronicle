@@ -105,3 +105,17 @@ def test_build_timeline_error_segment_uses_error_message_as_label():
 def test_build_timeline_skips_non_segment_event_types():
     events = [_event("e1", agent_name="agent-a", event_type="agent_message", data={"content": "hi"})]
     assert build_timeline(events)[0]["segments"] == []
+
+
+def test_build_timeline_retry_label_uses_reason():
+    events = [_event("e1", agent_name="agent-a", event_type="retry", data={"reason": "timeout"})]
+    segment = build_timeline(events)[0]["segments"][0]
+    assert segment["type"] == "retry"
+    assert segment["label"] == "timeout"
+    assert segment["token_usage"] is None
+
+
+def test_build_timeline_retry_label_defaults_when_no_reason():
+    events = [_event("e1", agent_name="agent-a", event_type="retry")]
+    segment = build_timeline(events)[0]["segments"][0]
+    assert segment["label"] == "retry"
