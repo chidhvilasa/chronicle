@@ -6,6 +6,63 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-03
+
+### Added
+
+- `chronicle-sdk`: `chronicle.instrument(obj)` — one-line auto-instrumentation.
+  Detects the caller's framework (`chronicle.auto._detect_framework`, by
+  module path/class name only, no imports of any framework at module
+  level) and wires up the matching adapter with no manual
+  `ChronicleTracer`/adapter construction: a LangGraph graph is wrapped in a
+  thin `_InstrumentedGraph` proxy that injects the Chronicle callback into
+  every `invoke`/`ainvoke`/`stream`/`astream` call (and best-effort
+  auto-calls `tracer.register_graph()` via call-stack introspection when
+  `graph = chronicle.instrument(graph)` is written at module scope); an
+  OpenAI Agents SDK `Agent` gets a `ChronicleAgentHooks` instance attached
+  to `.hooks`; a PydanticAI `Agent` is wrapped in `ChronicleMiddleware`.
+  Prints `"Chronicle: recording to http://localhost:7823 — open the
+  desktop app to inspect"` on success, or `"Chronicle: server unavailable,
+  writing to chronicle_runs/ locally"` if the server couldn't be reached
+  or started. `chronicle.instrument_context(obj)` is the context-manager
+  variant — flushes on exit and prints a one-line run summary (event
+  count, total tokens, duration, `run_id`).
+- `chronicle-sdk`: `chronicle.ServerManager` — auto-starts the Chronicle
+  server as a subprocess (`python -m uvicorn src.main:app`, the same
+  approach the Tauri app's `start_chronicle_server` uses) if
+  `GET /health` isn't already reachable on `localhost:7823`, polling every
+  500ms up to 5s before giving up and falling back to local file storage.
+  The subprocess's PID is written to `~/.chronicle/server.pid` and
+  terminated via `atexit` when the Python process exits.
+- `chronicle-sdk`: the `chronicle` CLI (`chronicle start`/`stop`/`status`/
+  `open`), registered as a console script (`sdk/src/chronicle/cli.py`,
+  `pyproject.toml`'s `[project.scripts]`). `start` runs the server in the
+  foreground; `stop` reads the pid file `ServerManager` writes and sends
+  `SIGTERM`; `status` reports whether `GET /health` responds; `open`
+  best-effort launches the desktop app by trying a few platform-specific
+  commands.
+- `chronicle-sdk`: `chronicle.adapters.openai_agents.ChronicleAgentHooks` —
+  a duck-typed OpenAI Agents SDK hooks object (`on_agent_start`/
+  `on_agent_end`/`on_tool_call`/`on_tool_result`/`on_handoff`), recorded as
+  `agent_message`/`tool_call` events (discriminated by `data["event"]`)
+  rather than introducing new server-side event types.
+- `chronicle-sdk`: `chronicle.adapters.pydanticai.ChronicleMiddleware` — wraps
+  a PydanticAI `Agent`'s `run_sync()`, capturing model name, prompt,
+  response, tool calls (via `ToolCallPart` introspection), token usage,
+  duration, and errors as one `llm_call`/`error` event per call. Async
+  `run`/`run_stream` pass through unwrapped (see `KNOWN_ISSUES.md`).
+- README: quickstart reduced to `pip install chronicle-sdk` +
+  `chronicle.instrument(graph)`; added a Framework support table
+  (LangGraph/OpenAI Agents SDK/PydanticAI supported, CrewAI/AutoGen
+  planned for v0.4.0).
+
+### Changed
+
+- README: quickstart no longer shows manual `ChronicleTracer`/
+  `LangGraphAdapter` wiring as the primary path (still available, and
+  still exercised directly in `Getting started (development)`) — the
+  one-line `chronicle.instrument()` API is now the documented entry point.
+
 ## [0.2.0] - 2026-07-02
 
 ### Added

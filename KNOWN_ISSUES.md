@@ -1,7 +1,29 @@
 # Known Issues
 
-## v0.2.0 scope
+## v0.3.0 scope
 
+- **Auto server startup requires `uvicorn` in the same Python environment**:
+  `chronicle.instrument()`/`ServerManager.ensure_running()` spawns `python
+  -m uvicorn src.main:app`, which only works if `chronicle-server` (and its
+  `uvicorn` dependency) is installed in the same Python environment as the
+  agent process. If it isn't, the subprocess fails to spawn and Chronicle
+  falls back to writing `chronicle_runs/*.json` locally — tracing still
+  works, just without the server/desktop app until it's installed and
+  started (`pip install chronicle-server` or `chronicle start`).
+- **`chronicle open` requires the desktop app to be installed separately**:
+  the CLI's `open` command tries a few platform-specific launch commands
+  (`chronicle-app`, `open -a Chronicle`, `cmd /c start Chronicle`) but has
+  no way to install the app itself — see [Download](./README.md#download)
+  for the desktop app installers. On macOS in particular, `open -a
+  Chronicle` can appear to succeed (the `open` binary launches
+  successfully) even when the app isn't installed, since that failure
+  happens asynchronously after the CLI has already returned.
+- **PydanticAI middleware wraps synchronous runs only, async support in
+  v0.4.0**: `chronicle.adapters.pydanticai.ChronicleMiddleware` only
+  instruments `run_sync()`. Async `run()`/`run_stream()` calls pass
+  straight through to the wrapped agent unwrapped, via `__getattr__` — a
+  PydanticAI agent driven only through `await agent.run(...)` won't
+  produce any Chronicle events yet.
 - **Replay requires graph registered via `tracer.register_graph()`**:
   `POST /replay` 400s with "No graph registered. Call
   tracer.register_graph() before replaying." if nothing has been
@@ -21,11 +43,12 @@
   there's no check that the keys/shapes make sense for the target graph's
   state schema — a bad modification just surfaces as whatever error the
   graph itself raises, and the replay run is marked `"failed"`.
-- **Only a LangGraph/LangChain adapter is available**: `chronicle-sdk` ships
-  `chronicle.adapters.langgraph.LangGraphAdapter`. There is no CrewAI or
-  AutoGen adapter yet — instrumenting agents built on those frameworks
-  requires calling `ChronicleTracer.record_event()` directly rather than an
-  automatic callback integration.
+- **CrewAI and AutoGen adapters are not available yet**: `chronicle-sdk`
+  ships adapters for LangGraph, OpenAI Agents SDK, and PydanticAI (see the
+  README's Framework support table). CrewAI/AutoGen are planned for
+  v0.4.0; instrumenting agents built on those frameworks today requires
+  calling `ChronicleTracer.record_event()` directly rather than
+  `chronicle.instrument()`.
 - **The desktop app doesn't bundle the server as a real sidecar**: see
   "The Chronicle server is not a real bundled Tauri sidecar" below for the
   full explanation and the documented workaround.
