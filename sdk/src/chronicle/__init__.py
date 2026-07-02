@@ -4,7 +4,7 @@ from chronicle.adapters.langgraph import LangGraphAdapter
 from chronicle.models import ChronicleEvent, EventType, StateSnapshot, TokenUsage
 from chronicle.tracer import ChronicleTracer
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "ChronicleTracer",

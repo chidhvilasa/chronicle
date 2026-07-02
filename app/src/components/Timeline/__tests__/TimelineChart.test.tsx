@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TimelineLane } from "../../../types";
 
@@ -108,6 +108,51 @@ describe("TimelineChart", () => {
     const { unmount } = render(<TimelineChart lanes={[lane]} zoom={1} />);
     unmount();
     expect(mockChart.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a Replay from here button when hovering a segment with a snapshot", () => {
+    render(<TimelineChart lanes={[lane]} zoom={1} snapshotEventIds={new Set(["evt-1"])} />);
+
+    const mouseoverCall = mockChart.on.mock.calls.find((call) => call[0] === "mouseover");
+    const handler = mouseoverCall?.[2] as ((params: unknown) => void) | undefined;
+    act(() => {
+      handler?.({ data: { segment: lane.segments[0], agentName: "agent-a" }, event: { offsetX: 10, offsetY: 20 } });
+    });
+
+    expect(screen.getByTestId("replay-from-here-button")).toBeInTheDocument();
+  });
+
+  it("does not show a Replay from here button for a segment without a snapshot", () => {
+    render(<TimelineChart lanes={[lane]} zoom={1} snapshotEventIds={new Set(["some-other-event"])} />);
+
+    const mouseoverCall = mockChart.on.mock.calls.find((call) => call[0] === "mouseover");
+    const handler = mouseoverCall?.[2] as ((params: unknown) => void) | undefined;
+    act(() => {
+      handler?.({ data: { segment: lane.segments[0], agentName: "agent-a" }, event: { offsetX: 10, offsetY: 20 } });
+    });
+
+    expect(screen.queryByTestId("replay-from-here-button")).not.toBeInTheDocument();
+  });
+
+  it("calls onReplayClick with the hovered segment when the replay button is clicked", () => {
+    const onReplayClick = vi.fn();
+    render(
+      <TimelineChart
+        lanes={[lane]}
+        zoom={1}
+        snapshotEventIds={new Set(["evt-1"])}
+        onReplayClick={onReplayClick}
+      />
+    );
+
+    const mouseoverCall = mockChart.on.mock.calls.find((call) => call[0] === "mouseover");
+    const handler = mouseoverCall?.[2] as ((params: unknown) => void) | undefined;
+    act(() => {
+      handler?.({ data: { segment: lane.segments[0], agentName: "agent-a" }, event: { offsetX: 10, offsetY: 20 } });
+    });
+
+    screen.getByTestId("replay-from-here-button").click();
+    expect(onReplayClick).toHaveBeenCalledWith(lane.segments[0]);
   });
 
   it("builds series data for up to 1000 events across many lanes without throwing", () => {

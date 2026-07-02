@@ -79,6 +79,39 @@ describe("RunList", () => {
     });
   });
 
+  it("shows a REPLAY badge with a source tooltip for replay runs", async () => {
+    const replayRun: Run = {
+      ...run,
+      run_id: "run-replay-1",
+      metadata: {
+        is_replay: true,
+        source_run_id: "run-abcdefgh1234",
+        source_snapshot_id: "snap-1",
+        step_index: 4,
+      },
+    };
+    vi.mocked(chronicleApi.listRuns).mockResolvedValue([replayRun]);
+    render(<RunList />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("replay-badge")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("replay-badge")).toHaveAttribute(
+      "title",
+      "Replayed from run run-abcdefgh1234 at step 4"
+    );
+  });
+
+  it("does not show a REPLAY badge for a non-replay run", async () => {
+    vi.mocked(chronicleApi.listRuns).mockResolvedValue([run]);
+    render(<RunList />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/42 tokens/)).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("replay-badge")).not.toBeInTheDocument();
+  });
+
   it("polls GET /runs on the configured interval", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     vi.mocked(chronicleApi.listRuns).mockResolvedValue([]);

@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { chronicleApi, ChronicleApiError } from "../../api/client";
 import { TIMELINE_MAX_ZOOM, TIMELINE_ZOOM_STEP } from "../../config";
-import type { Timeline as TimelineData, TimelineLane, TimelineSegment } from "../../types";
+import { ReplayModal } from "../Replay/ReplayModal";
+import type { SnapshotSummary, Timeline as TimelineData, TimelineLane, TimelineSegment } from "../../types";
 import { TimelineChart } from "./TimelineChart";
 import { TimelineControls, type SegmentFilter } from "./TimelineControls";
 import { TokenUsageSummary } from "./TokenUsageSummary";
@@ -41,6 +42,8 @@ export function Timeline({ runId, onSegmentSelect, onAgentSelect }: TimelineProp
   const [filter, setFilter] = useState<SegmentFilter>("all");
   const [zoom, setZoom] = useState(1);
   const [refreshToken, setRefreshToken] = useState(0);
+  const [snapshots, setSnapshots] = useState<SnapshotSummary[]>([]);
+  const [replaySnapshotId, setReplaySnapshotId] = useState<string | null>(null);
 
   useEffect(() => {
     if (runId === null) {
@@ -70,9 +73,47 @@ export function Timeline({ runId, onSegmentSelect, onAgentSelect }: TimelineProp
   }, [runId, refreshToken]);
 
   useEffect(() => {
+    if (runId === null) {
+      setSnapshots([]);
+      return;
+    }
+    let cancelled = false;
+    chronicleApi
+      .listRunSnapshots(runId)
+      .then((result) => {
+        if (!cancelled) setSnapshots(result);
+      })
+      .catch(() => {
+        if (!cancelled) setSnapshots([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [runId, refreshToken]);
+
+  useEffect(() => {
     setZoom(1);
     setFilter("all");
   }, [runId]);
+
+  const snapshotEventIds = useMemo(
+    () => new Set(snapshots.filter((s) => s.event_id !== null).map((s) => s.event_id as string)),
+    [snapshots]
+  );
+
+  const snapshotIdByEventId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const snapshot of snapshots) {
+      if (snapshot.event_id !== null) map.set(snapshot.event_id, snapshot.snapshot_id);
+    }
+    return map;
+  }, [snapshots]);
+
+  function handleReplayClick(segment: TimelineSegment) {
+    if (segment.event_id === null) return;
+    const snapshotId = snapshotIdByEventId.get(segment.event_id);
+    if (snapshotId !== undefined) setReplaySnapshotId(snapshotId);
+  }
 
   if (runId === null) {
     return <p className="panel-empty">Select a run to see its timeline.</p>;
@@ -118,7 +159,16 @@ export function Timeline({ runId, onSegmentSelect, onAgentSelect }: TimelineProp
         zoom={zoom}
         onSegmentSelect={onSegmentSelect}
         onAgentSelect={onAgentSelect}
+        snapshotEventIds={snapshotEventIds}
+        onReplayClick={handleReplayClick}
       />
+      {replaySnapshotId !== null && runId !== null && (
+        <ReplayModal
+          runId={runId}
+          snapshotId={replaySnapshotId}
+          onClose={() => setReplaySnapshotId(null)}
+        />
+      )}
     </div>
   );
 }

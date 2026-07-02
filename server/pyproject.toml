@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "chronicle-server"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local FastAPI server that stores and serves Chronicle agent traces"
 readme = "README.md"
 requires-python = ">=3.10"

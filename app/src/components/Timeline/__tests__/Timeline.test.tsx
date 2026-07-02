@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Timeline as TimelineData } from "../../../types";
 
@@ -23,7 +23,13 @@ vi.mock("../../../api/client", async () => {
   const actual = await vi.importActual<typeof import("../../../api/client")>("../../../api/client");
   return {
     ...actual,
-    chronicleApi: { getRunTimeline: vi.fn() },
+    chronicleApi: {
+      getRunTimeline: vi.fn(),
+      listRunSnapshots: vi.fn(),
+      getSnapshot: vi.fn(),
+      replay: vi.fn(),
+      listRuns: vi.fn(),
+    },
   };
 });
 
@@ -59,7 +65,9 @@ const timelineData: TimelineData = {
 
 beforeEach(() => {
   vi.mocked(chronicleApi.getRunTimeline).mockReset();
+  vi.mocked(chronicleApi.listRunSnapshots).mockReset().mockResolvedValue([]);
   mockInit.mockClear();
+  mockChart.on.mockClear();
   mockChart.setOption.mockClear();
   mockChart.dispatchAction.mockClear();
 });
@@ -156,5 +164,34 @@ describe("Timeline", () => {
     expect(mockChart.dispatchAction).toHaveBeenCalledWith(
       expect.objectContaining({ type: "dataZoom" })
     );
+  });
+
+  it("opens the replay modal when a Replay from here button is clicked", async () => {
+    vi.mocked(chronicleApi.getRunTimeline).mockResolvedValue(timelineData);
+    vi.mocked(chronicleApi.listRunSnapshots).mockResolvedValue([
+      { snapshot_id: "snap-1", step_index: 2, timestamp: 1000, agent_name: "agent-a", event_id: "evt-1" },
+    ]);
+    vi.mocked(chronicleApi.getSnapshot).mockReturnValue(new Promise(() => {}));
+    render(<Timeline runId="run-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("timeline-root")).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(chronicleApi.listRunSnapshots).toHaveBeenCalledWith("run-1");
+    });
+
+    const mouseoverCall = mockChart.on.mock.calls.find((call) => call[0] === "mouseover");
+    const handler = mouseoverCall?.[2] as ((params: unknown) => void) | undefined;
+    act(() => {
+      handler?.({
+        data: { segment: timelineData.lanes[0].segments[0], agentName: "agent-a" },
+        event: { offsetX: 5, offsetY: 5 },
+      });
+    });
+
+    fireEvent.click(screen.getByTestId("replay-from-here-button"));
+
+    expect(screen.getByTestId("replay-modal")).toBeInTheDocument();
   });
 });

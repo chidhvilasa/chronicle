@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as echarts from "echarts";
 import type {
   CustomSeriesRenderItemAPI,
@@ -14,6 +14,15 @@ interface TimelineChartProps {
   zoom: number;
   onSegmentSelect?: (segment: TimelineSegment) => void;
   onAgentSelect?: (agentName: string) => void;
+  /** event_ids that have a replayable snapshot; segments matching one show a "Replay from here" button on hover. */
+  snapshotEventIds?: Set<string>;
+  onReplayClick?: (segment: TimelineSegment) => void;
+}
+
+interface HoveredSegment {
+  segment: TimelineSegment;
+  x: number;
+  y: number;
 }
 
 interface SegmentDatum {
@@ -125,13 +134,37 @@ function formatTooltip(datum: SegmentDatum): string {
 }
 
 /** Horizontal swimlane timeline: one lane per agent, rendered via an ECharts custom series. */
-export function TimelineChart({ lanes, zoom, onSegmentSelect, onAgentSelect }: TimelineChartProps) {
+export function TimelineChart({
+  lanes,
+  zoom,
+  onSegmentSelect,
+  onAgentSelect,
+  snapshotEventIds,
+  onReplayClick,
+}: TimelineChartProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<ECharts | null>(null);
   const onSegmentSelectRef = useRef(onSegmentSelect);
   onSegmentSelectRef.current = onSegmentSelect;
   const onAgentSelectRef = useRef(onAgentSelect);
   onAgentSelectRef.current = onAgentSelect;
+  const snapshotEventIdsRef = useRef(snapshotEventIds);
+  snapshotEventIdsRef.current = snapshotEventIds;
+  const [hovered, setHovered] = useState<HoveredSegment | null>(null);
+  const hideTimeoutRef = useRef<number | null>(null);
+
+  function cancelHide() {
+    if (hideTimeoutRef.current !== null) {
+      window.clearTimeout(hideTimeoutRef.current);
+      hideTimeoutRef.current = null;
+    }
+  }
+
+  /** Delayed so the cursor can travel from the segment to the floating button without it vanishing. */
+  function scheduleHide() {
+    cancelHide();
+    hideTimeoutRef.current = window.setTimeout(() => setHovered(null), 250);
+  }
 
   useEffect(() => {
     if (containerRef.current === null) return;
@@ -146,6 +179,19 @@ export function TimelineChart({ lanes, zoom, onSegmentSelect, onAgentSelect }: T
       const datum = params.data as SegmentDatum | undefined;
       if (datum) onSegmentSelectRef.current?.(datum.segment);
     });
+
+    chart.on("mouseover", { seriesIndex: 0 }, (params) => {
+      const datum = params.data as SegmentDatum | undefined;
+      const eventId = datum?.segment.event_id ?? null;
+      if (datum === undefined || eventId === null || !snapshotEventIdsRef.current?.has(eventId)) {
+        return;
+      }
+      cancelHide();
+      const zrEvent = (params as unknown as { event?: { offsetX: number; offsetY: number } }).event;
+      setHovered({ segment: datum.segment, x: zrEvent?.offsetX ?? 0, y: zrEvent?.offsetY ?? 0 });
+    });
+
+    chart.on("mouseout", { seriesIndex: 0 }, () => scheduleHide());
 
     const handleResize = () => chart.resize();
     window.addEventListener("resize", handleResize);
@@ -203,5 +249,23 @@ export function TimelineChart({ lanes, zoom, onSegmentSelect, onAgentSelect }: T
     });
   }, [zoom]);
 
-  return <div ref={containerRef} className="timeline-chart" data-testid="timeline-chart" />;
+  return (
+    <div className="timeline-chart-wrapper">
+      <div ref={containerRef} className="timeline-chart" data-testid="timeline-chart" />
+      {hovered !== null && (
+        <button
+          type="button"
+          className="timeline-replay-button"
+          style={{ left: hovered.x, top: Math.max(hovered.y - 32, 0) }}
+          data-testid="replay-from-here-button"
+          onMouseDown={(event) => event.preventDefault()}
+          onMouseEnter={cancelHide}
+          onMouseLeave={scheduleHide}
+          onClick={() => onReplayClick?.(hovered.segment)}
+        >
+          Replay from here
+        </button>
+      )}
+    </div>
+  );
 }

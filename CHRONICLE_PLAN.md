@@ -327,7 +327,8 @@ Tauri + React + TypeScript desktop app, three-panel layout under a top nav:
   shows the full JSON of whichever event or segment is currently selected.
 
 State lives in a Zustand store (`app/src/store/useAppStore.ts`): `runs`,
-`selectedRunId`, `loading`, `error`, `activePanel`, `selectedDetail`.
+`selectedRunId`, `loading`, `error`, `activePanel`, `selectedDetail`, plus
+(as of the replay UI) `diffPrefill` and `toast` — see "Replay UI" below.
 
 The app talks to the server exclusively over its REST API
 (`app/src/api/client.ts`) — it holds no direct database access. Every fetch
@@ -404,6 +405,45 @@ name/error differ. `EventDiffList.tsx` colors `different` rows yellow and
 unchanged gray). If either selected run has more than 500 events, `Diff.tsx`
 shows a warning banner but still renders the full comparison.
 
+### Replay UI (`app/src/components/Replay/`)
+
+`Timeline.tsx` fetches `GET /runs/{id}/snapshots` alongside the timeline
+itself and builds an `event_id -> snapshot_id` map. `TimelineChart.tsx`
+tracks a hovered segment via ECharts' `mouseover`/`mouseout` events (not a
+pixel-perfect canvas overlay — see "Known constraints") and shows a
+floating "Replay from here" button when the hovered segment's `event_id`
+has a matching snapshot, with a short (`250ms`) hide delay so the cursor
+can travel from the segment to the button without it disappearing.
+Clicking it opens `Replay/ReplayModal.tsx`, which:
+
+1. Fetches the full snapshot via `GET /runs/{id}/snapshots/{snapshot_id}`
+   and shows its step index, timestamp, agent name, and a graph-state
+   summary (message count, last tool result).
+2. Offers a plain-`<textarea>` "Modifications" JSON editor (placeholder
+   `{ "override_key": "new_value" }`) and two buttons, "Replay as-is" and
+   "Replay with modifications" — the latter parses the textarea as JSON
+   client-side and shows a red validation error without calling the server
+   if it doesn't parse.
+3. Calls `POST /replay`, which returns the new run's `run_id` immediately
+   (the server replays in a `BackgroundTasks` job), then polls `GET /runs`
+   every `REPLAY_POLL_INTERVAL_MS` until that run leaves `"running"` status
+   (or `REPLAY_POLL_TIMEOUT_MS` elapses), showing "Replaying from step
+   N..." meanwhile.
+4. On completion, selects the new run, closes the modal, and calls
+   `useAppStore`'s `showToast()` with "Replay complete. Compare with
+   original?"; the toast's action sets `diffPrefill` (`{runAId, runBId}`)
+   and switches to the Diff tab, which `Diff.tsx` consumes once on mount
+   and clears. On failure, shows the server's error message in red instead
+   of closing.
+
+`RunList.tsx`'s `RunCard` reads `getReplayMetadata(run)` (in
+`app/src/types`, parsing `metadata.is_replay`/`source_run_id`/
+`source_snapshot_id`/`step_index`) and renders a purple `REPLAY` badge with
+a `title` tooltip ("Replayed from run {source_run_id} at step
+{step_index}") next to the run ID when present. `Toast.tsx` is a generic
+bottom-of-screen notification reading `useAppStore`'s `toast` field,
+auto-dismissing after `TOAST_DURATION_MS`.
+
 ### TypeScript interfaces (`app/src/types/index.ts`)
 
 ```typescript
@@ -435,10 +475,23 @@ export interface TimelineLane {
   agent_name: string;
   segments: TimelineSegment[];
 }
+
+export interface SnapshotSummary {
+  snapshot_id: string; step_index: number; timestamp: number;
+  agent_name: string | null; event_id: string | null;
+}
+
+export interface Snapshot extends SnapshotSummary {
+  run_id: string; graph_state: Record<string, unknown>;
+  messages: unknown[]; tool_results: unknown[]; metadata: Record<string, unknown>;
+}
 ```
 
 These mirror `server/src/models.py`'s `EventOut`/`RunOut`/
-`TimelineSegmentOut`/`TimelineLaneOut` field-for-field.
+`TimelineSegmentOut`/`TimelineLaneOut`/`SnapshotSummaryOut`/`SnapshotOut`
+field-for-field. `getReplayMetadata(run: Run)` reads a replay run's
+`is_replay`/`source_run_id`/`source_snapshot_id`/`step_index` out of
+`Run.metadata`, returning `null` if the shape doesn't match.
 
 ### Tauri backend (`app/src-tauri/src/lib.rs`)
 
@@ -571,9 +624,21 @@ either way).
   before this phase (see "Known constraints" below). Added
   `ChronicleTracer.register_graph()` and auto-registration via
   `LangGraphAdapter(..., graph=, graph_module=, graph_attr=)`.
+- **Phase 11 — Replay UI + release v0.2.0** *(this phase)*: added
+  `app/src/components/Replay/ReplayModal.tsx` and a "Replay from here"
+  hover button on timeline segments backed by a snapshot
+  (`TimelineChart.tsx`'s `mouseover`/`mouseout`, with a short hide delay).
+  The modal shows snapshot detail, an optional JSON modifications
+  textarea, calls `POST /replay`, and polls `GET /runs` until the new run
+  finishes. Added a purple `REPLAY` badge with a source-run/step tooltip to
+  `RunList.tsx` (via the new `getReplayMetadata()` helper), and a
+  `Toast.tsx` component wired to new `useAppStore` fields
+  (`diffPrefill`/`toast`) so a completed replay can offer a one-click
+  "Compare with original?" shortcut into the Diff tab with both runs
+  pre-selected. Unified all package versions at `0.2.0`.
 - **Future work**: run search/filter in the sidebar, latency/error-rate
   analytics dashboards, CrewAI/AutoGen adapters, an accessibility pass, and
-  a public docs site remain unscheduled beyond Phase 11.
+  a public docs site remain unscheduled.
 
 ## 6. Known constraints
 
@@ -609,3 +674,11 @@ either way).
   `COST_PER_INPUT_TOKEN_USD`/`COST_PER_OUTPUT_TOKEN_USD` constants
   (`app/src/config`), not the actual per-model pricing of whatever LLM
   provider produced the tokens. Treat it as a ballpark, not a bill.
+- **The "Replay from here" button is a floating DOM overlay, not a
+  canvas-anchored element (as of Phase 11)**: `TimelineChart.tsx` is an
+  ECharts canvas, which can't render real DOM buttons inside it. Rather
+  than a pixel-perfect overlay tracking the canvas's internal coordinate
+  system, the button is positioned via the raw `offsetX`/`offsetY` from
+  ECharts' `mouseover` event and shown/hidden with a `250ms` delay so the
+  cursor can reach it — a deliberately simple approach over a fragile
+  cursor-following one.

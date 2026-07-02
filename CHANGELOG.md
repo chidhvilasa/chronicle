@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-02
+
 ### Added
 
 - `chronicle-sdk`: `chronicle.models.StateSnapshot` and
@@ -39,6 +41,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `chronicle-sdk`: `ChronicleTracer.register_graph()` (`POST /register`,
   module-path only, never pickled) and auto-registration via
   `LangGraphAdapter(tracer, graph=, graph_module=, graph_attr=)`.
+- `chronicle-app`: the replay UI. Hovering a timeline segment that has a
+  captured snapshot (`Timeline.tsx` fetches `GET /runs/{id}/snapshots` and
+  matches on `event_id`) shows a floating "Replay from here" button
+  (`TimelineChart.tsx`'s `mouseover`/`mouseout` on the series, with a short
+  hide delay so the cursor can reach the button before it disappears).
+  Clicking it opens `app/src/components/Replay/ReplayModal.tsx`: step
+  index/timestamp/agent name/graph-state summary from `GET
+  /runs/{id}/snapshots/{snapshot_id}`, an optional JSON "Modifications"
+  textarea, and "Replay as-is"/"Replay with modifications" buttons that call
+  `POST /replay` and poll `GET /runs` for the new run to leave `"running"`
+  (`REPLAY_POLL_INTERVAL_MS`/`REPLAY_POLL_TIMEOUT_MS`), showing "Replaying
+  from step N..." meanwhile. `RunList.tsx` shows a purple `REPLAY` badge
+  (tooltip: source run + step) for any run whose metadata has `is_replay:
+  true`, via the new `getReplayMetadata()` helper in `app/src/types`. New
+  `useAppStore` fields `diffPrefill`/`toast` (plus a new `Toast.tsx`
+  component) wire the modal's completion to the rest of the app: on success
+  it selects the new run and shows a toast — "Replay complete. Compare with
+  original?" — whose action sets `diffPrefill` and switches to the Diff tab
+  with Run A/B pre-filled to the original/replay run, consumed once by
+  `Diff.tsx` and cleared.
 
 ### Fixed
 

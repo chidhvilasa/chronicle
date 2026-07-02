@@ -65,10 +65,53 @@ export interface HealthStatus {
   version: string;
 }
 
+export interface SnapshotSummary {
+  snapshot_id: string;
+  step_index: number;
+  timestamp: number;
+  agent_name: string | null;
+  event_id: string | null;
+}
+
+export interface Snapshot {
+  snapshot_id: string;
+  run_id: string;
+  event_id: string | null;
+  step_index: number;
+  timestamp: number;
+  agent_name: string | null;
+  graph_state: Record<string, unknown>;
+  messages: unknown[];
+  tool_results: unknown[];
+  metadata: Record<string, unknown>;
+}
+
+export interface ReplayResponse {
+  run_id: string;
+}
+
 /** Whichever main-panel item is currently selected for the detail inspector. */
 export type DetailItem = Event | TimelineSegment;
 
 /** `Event` and `TimelineSegment` both carry `event_id`, so discriminate on `run_id` instead. */
 export function isEventDetail(item: DetailItem): item is Event {
   return "run_id" in item;
+}
+
+export interface ReplayMetadata {
+  sourceRunId: string;
+  sourceSnapshotId: string;
+  stepIndex: number;
+}
+
+/** Reads `{is_replay, source_run_id, source_snapshot_id, step_index}` out of a run's metadata. */
+export function getReplayMetadata(run: Run): ReplayMetadata | null {
+  const { metadata } = run;
+  if (metadata["is_replay"] !== true) return null;
+  const sourceRunId = metadata["source_run_id"];
+  const sourceSnapshotId = metadata["source_snapshot_id"];
+  const stepIndex = metadata["step_index"];
+  if (typeof sourceRunId !== "string" || typeof sourceSnapshotId !== "string") return null;
+  if (typeof stepIndex !== "number") return null;
+  return { sourceRunId, sourceSnapshotId, stepIndex };
 }

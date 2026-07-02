@@ -1,5 +1,13 @@
 import { FETCH_TIMEOUT_MS } from "../config";
-import type { Event, HealthStatus, Run, Timeline } from "../types";
+import type {
+  Event,
+  HealthStatus,
+  ReplayResponse,
+  Run,
+  Snapshot,
+  SnapshotSummary,
+  Timeline,
+} from "../types";
 
 const DEFAULT_SERVER_URL = "http://127.0.0.1:7823";
 
@@ -67,4 +75,14 @@ export const chronicleApi = {
   getRunTimeline: (runId: string): Promise<Timeline> => request(`/runs/${runId}/timeline`),
   deleteRun: (runId: string): Promise<void> => request(`/runs/${runId}`, { method: "DELETE" }),
   checkHealth: (): Promise<HealthStatus> => request("/health"),
+  listRunSnapshots: (runId: string): Promise<SnapshotSummary[]> =>
+    request(`/runs/${runId}/snapshots`),
+  getSnapshot: (runId: string, snapshotId: string): Promise<Snapshot> =>
+    request(`/runs/${runId}/snapshots/${snapshotId}`),
+  replay: (runId: string, snapshotId: string, modifications: Record<string, unknown>): Promise<ReplayResponse> =>
+    request("/replay", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ run_id: runId, snapshot_id: snapshotId, modifications }),
+    }),
 };

@@ -18,3 +18,12 @@ export const TIMELINE_MAX_ZOOM = 8;
 
 /** Multiplier applied to the current zoom level per zoom in/out click. */
 export const TIMELINE_ZOOM_STEP = 1.5;
+
+/** How often the replay modal polls `GET /runs` while waiting for a replay to finish, in ms. */
+export const REPLAY_POLL_INTERVAL_MS = 1000;
+
+/** How long the replay modal polls before giving up and showing a timeout error, in ms. */
+export const REPLAY_POLL_TIMEOUT_MS = 60000;
+
+/** How long a toast notification stays on screen before auto-dismissing, in ms. */
+export const TOAST_DURATION_MS = 8000;

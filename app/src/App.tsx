@@ -1,6 +1,7 @@
 import { Inspector } from "./components/Inspector";
 import { MainPanel } from "./components/MainPanel";
 import { RunList } from "./components/RunList";
+import { Toast } from "./components/Toast";
 import { TopNav } from "./components/TopNav";
 import { useServerStartupError } from "./hooks/useServerStartupError";
 import "./App.css";
@@ -21,6 +22,7 @@ function App() {
         <MainPanel />
         <Inspector />
       </div>
+      <Toast />
     </div>
   );
 }

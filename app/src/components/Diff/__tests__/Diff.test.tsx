@@ -103,6 +103,22 @@ describe("Diff", () => {
     expect(screen.getByTestId("diff-event-list")).toBeInTheDocument();
   });
 
+  it("prefills Run A and Run B from the store's diffPrefill and clears it after consuming", async () => {
+    vi.mocked(chronicleApi.listRunEvents).mockImplementation((runId: string) =>
+      Promise.resolve(makeEvents(1, runId))
+    );
+    useAppStore.getState().setDiffPrefill({ runAId: "run-1", runBId: "run-2" });
+
+    render(<Diff />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("diff-summary")).toBeInTheDocument();
+    });
+    expect(screen.getByLabelText("Run A")).toHaveValue("run-1");
+    expect(screen.getByLabelText("Run B")).toHaveValue("run-2");
+    expect(useAppStore.getState().diffPrefill).toBeNull();
+  });
+
   it("shows a human-readable error when fetching events fails", async () => {
     vi.mocked(chronicleApi.listRunEvents).mockRejectedValue(new Error("boom"));
     render(<Diff />);

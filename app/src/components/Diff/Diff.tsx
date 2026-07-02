@@ -13,12 +13,21 @@ const LARGE_RUN_EVENT_THRESHOLD = 500;
 /** Diff tab: pick two runs and compare their duration/tokens/cost/errors/tool calls and events. */
 export function Diff() {
   const runs = useAppStore((state) => state.runs);
+  const diffPrefill = useAppStore((state) => state.diffPrefill);
+  const setDiffPrefill = useAppStore((state) => state.setDiffPrefill);
   const [runAId, setRunAId] = useState<string | null>(null);
   const [runBId, setRunBId] = useState<string | null>(null);
   const [eventsA, setEventsA] = useState<Event[]>([]);
   const [eventsB, setEventsB] = useState<Event[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (diffPrefill === null) return;
+    setRunAId(diffPrefill.runAId);
+    setRunBId(diffPrefill.runBId);
+    setDiffPrefill(null);
+  }, [diffPrefill, setDiffPrefill]);
 
   useEffect(() => {
     if (runAId === null || runBId === null) {

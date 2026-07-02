@@ -1,24 +1,26 @@
 # Known Issues
 
-## v0.1.0 scope
+## v0.2.0 scope
 
-- **Replay has no UI yet (as of Phase 10)**: the server can now register a
-  LangGraph graph (`POST /register`) and replay a run from any captured
-  snapshot (`POST /replay`), but there's no way to trigger this from the
-  desktop app — no "Replay from here" button, no way to view or pick a
-  snapshot visually. The only way to replay a run today is to call the
-  server's API directly. UI is planned for Phase 11.
-- **Replay requires the graph to be registered first**: `POST /replay`
-  400s with "No graph registered. Call tracer.register_graph() before
-  replaying." if nothing has been registered in the current server
-  process. There's also only ever one "active" registered graph — the most
-  recently registered one — so a server tracing multiple distinct agents
-  at once can only replay whichever was registered last.
-- **Replay doesn't know or guard against side effects**: `ReplayEngine`
-  just calls `graph.invoke()` again. If the original run's tools made real
-  API calls, sent messages, or wrote to a database, replaying it will do
-  those things again — there's no dry-run mode or side-effect detection.
-  Only replay runs you're comfortable re-executing for real.
+- **Replay requires graph registered via `tracer.register_graph()`**:
+  `POST /replay` 400s with "No graph registered. Call
+  tracer.register_graph() before replaying." if nothing has been
+  registered in the current server process. There's also only ever one
+  "active" registered graph — the most recently registered one — so a
+  server tracing multiple distinct agents at once can only replay
+  whichever was registered last.
+- **Replay does not support agents with external side effects (DB writes,
+  real API calls) without user caution**: `ReplayEngine` just calls
+  `graph.invoke()` again. If the original run's tools made real API calls,
+  sent messages, or wrote to a database, replaying it will do those things
+  again — there's no dry-run mode or side-effect detection. Only replay
+  runs you're comfortable re-executing for real.
+- **Modifications editor is plain JSON, no schema validation yet**: the
+  Replay modal's "Modifications" field is a plain textarea that's parsed
+  as JSON client-side (rejecting malformed JSON before submitting), but
+  there's no check that the keys/shapes make sense for the target graph's
+  state schema — a bad modification just surfaces as whatever error the
+  graph itself raises, and the replay run is marked `"failed"`.
 - **Only a LangGraph/LangChain adapter is available**: `chronicle-sdk` ships
   `chronicle.adapters.langgraph.LangGraphAdapter`. There is no CrewAI or
   AutoGen adapter yet — instrumenting agents built on those frameworks

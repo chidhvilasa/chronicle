@@ -5,6 +5,17 @@ export type PanelId = "timeline" | "inspector" | "diff";
 
 export type InspectorTab = "event" | "agent" | "tools";
 
+export interface DiffPrefill {
+  runAId: string;
+  runBId: string;
+}
+
+export interface Toast {
+  message: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}
+
 interface AppState {
   runs: Run[];
   selectedRunId: string | null;
@@ -15,6 +26,8 @@ interface AppState {
   inspectorTab: InspectorTab;
   selectedAgentName: string | null;
   selectedToolName: string | null;
+  diffPrefill: DiffPrefill | null;
+  toast: Toast | null;
   setRuns: (runs: Run[]) => void;
   selectRun: (runId: string | null) => void;
   setLoading: (loading: boolean) => void;
@@ -26,6 +39,10 @@ interface AppState {
   /** Sets the selected agent and switches the right panel to the Agent tab. */
   selectAgent: (agentName: string | null) => void;
   selectTool: (toolName: string | null) => void;
+  /** Queues an initial Run A / Run B selection for the Diff tab to pick up once. */
+  setDiffPrefill: (prefill: DiffPrefill | null) => void;
+  showToast: (toast: Toast) => void;
+  dismissToast: () => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -38,6 +55,8 @@ export const useAppStore = create<AppState>((set) => ({
   inspectorTab: "event",
   selectedAgentName: null,
   selectedToolName: null,
+  diffPrefill: null,
+  toast: null,
   setRuns: (runs) => set({ runs }),
   selectRun: (runId) =>
     set({
@@ -53,4 +72,7 @@ export const useAppStore = create<AppState>((set) => ({
   selectDetail: (selectedDetail) => set({ selectedDetail, inspectorTab: "event" }),
   selectAgent: (selectedAgentName) => set({ selectedAgentName, inspectorTab: "agent" }),
   selectTool: (selectedToolName) => set({ selectedToolName }),
+  setDiffPrefill: (diffPrefill) => set({ diffPrefill }),
+  showToast: (toast) => set({ toast }),
+  dismissToast: () => set({ toast: null }),
 }));

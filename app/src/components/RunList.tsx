@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { chronicleApi, ChronicleApiError } from "../api/client";
 import { RUN_LIST_POLL_INTERVAL_MS } from "../config";
 import { useAppStore } from "../store/useAppStore";
-import type { Run } from "../types";
+import { getReplayMetadata, type Run } from "../types";
 
 function formatRelativeTime(unixSeconds: number): string {
   const diffSeconds = Math.max(0, Math.round(Date.now() / 1000 - unixSeconds));
@@ -34,10 +34,22 @@ function statusBadge(status: string): "running" | "complete" | "failed" {
 
 function RunCard({ run, isSelected, onSelect }: { run: Run; isSelected: boolean; onSelect: () => void }) {
   const badge = statusBadge(run.status);
+  const replayMeta = getReplayMetadata(run);
   return (
     <li>
       <button type="button" className={isSelected ? "run-card active" : "run-card"} onClick={onSelect}>
-        <span className="run-card-id">{truncateRunId(run.run_id)}</span>
+        <span className="run-card-id-row">
+          <span className="run-card-id">{truncateRunId(run.run_id)}</span>
+          {replayMeta !== null && (
+            <span
+              className="run-card-replay-badge"
+              data-testid="replay-badge"
+              title={`Replayed from run ${replayMeta.sourceRunId} at step ${replayMeta.stepIndex}`}
+            >
+              REPLAY
+            </span>
+          )}
+        </span>
         <span className={`run-card-status status-${badge}`}>{badge}</span>
         <span className="run-card-meta">{formatRelativeTime(run.started_at)}</span>
         <span className="run-card-meta">{run.total_tokens} tokens</span>
