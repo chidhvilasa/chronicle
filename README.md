@@ -41,39 +41,20 @@ update, error, and retry in a desktop app.
 See [CHRONICLE_PLAN.md](./CHRONICLE_PLAN.md) for the full design and
 phase-by-phase roadmap.
 
-## Installation
+## Quickstart
 
 ```bash
 pip install chronicle-sdk
 ```
 
-Chronicle also ships a desktop app for browsing traces — see
-[Download](#download) below. Until `chronicle-sdk` is published to PyPI, or
-if you want the latest `main`, install from source instead:
-
-```bash
-git clone https://github.com/chidhvilasa/chronicle.git
-cd chronicle/sdk
-pip install -e .
-```
-
-## Quickstart
-
-Wrap a LangGraph agent with `ChronicleTracer` and `LangGraphAdapter` — every
-tool call, LLM call, and error the graph produces is captured automatically:
+Then in your agent file add one line:
 
 ```python
-from chronicle import ChronicleTracer, LangGraphAdapter
-
-tracer = ChronicleTracer()
-adapter = LangGraphAdapter(tracer)
-
-graph.invoke(your_input, config={"callbacks": [adapter]})
+import chronicle
+graph = chronicle.instrument(graph)
 ```
 
-Then run the Chronicle server (`uvicorn src.main:app` in `/server`, or let
-the desktop app start it for you) and open the app to see the run appear in
-the sidebar in real time.
+Open the Chronicle desktop app. Run your agent. That is it.
 
 ## Getting started (development)
 
