@@ -119,6 +119,39 @@ class ChronicleTracer:
         except Exception:  # pragma: no cover - defensive: never crash the agent
             logger.warning("Chronicle: failed to send state snapshot", exc_info=True)
 
+    def register_graph(self, graph: Any, module_path: str, attr_name: str) -> bool:
+        """Registers a LangGraph graph with the server so `POST /replay` can re-invoke it.
+
+        The graph object itself is never sent over the wire — no pickling,
+        since unpickling arbitrary data from a request body is a remote code
+        execution risk. Instead the server re-imports the graph itself from
+        `module_path`/`attr_name` (e.g. `"myapp.agent"`/`"graph"`), exactly
+        like a normal Python import statement. `graph` is accepted here only
+        so the call site reads naturally next to the object being
+        instrumented; it isn't used for anything.
+
+        Returns `True` if the server acknowledged the registration, `False`
+        if the server was unreachable or rejected it (logged as a warning
+        either way, never raised — registration failures shouldn't crash the
+        agent).
+        """
+        del graph  # not sent to the server; see the docstring
+        try:
+            response = self._client.post(
+                f"{self.server_url}/register",
+                json={"graph_module": module_path, "graph_attr": attr_name},
+            )
+            response.raise_for_status()
+            return True
+        except httpx.HTTPError:
+            logger.warning(
+                "Chronicle: failed to register graph '%s.%s' with the server",
+                module_path,
+                attr_name,
+                exc_info=True,
+            )
+            return False
+
     def close(self) -> None:
         self.flush()
         self._client.close()

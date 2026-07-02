@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -158,6 +159,53 @@ class Database:
         await self._conn.commit()
         return len(snapshots)
 
+    async def set_run_metadata(self, run_id: str, metadata: dict[str, Any]) -> None:
+        """Creates a run row (if needed) and sets its metadata.
+
+        Used to stamp a freshly-created replay run with
+        `{is_replay, source_run_id, source_snapshot_id, step_index}` before
+        any events have arrived for it. Safe to call on an existing run too:
+        only `metadata` is overwritten, so this can't clobber aggregates
+        computed from `events`.
+        """
+        now = time.time()
+        await self._conn.execute(
+            "INSERT INTO runs (run_id, started_at, finished_at, metadata) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(run_id) DO UPDATE SET metadata = excluded.metadata",
+            (run_id, now, now, json.dumps(metadata)),
+        )
+        await self._conn.commit()
+
+    async def set_run_status(self, run_id: str, status: str) -> None:
+        """Directly sets a run's status, bypassing the events-derived aggregate logic.
+
+        Used to mark a replay run `"complete"`/`"failed"` once it finishes —
+        call this *after* the tracer for that run has flushed its events, so
+        it isn't immediately overwritten by `_refresh_run_aggregates`.
+        """
+        await self._conn.execute("UPDATE runs SET status = ? WHERE run_id = ?", (status, run_id))
+        await self._conn.commit()
+
+    async def list_snapshots_summary(self, run_id: str) -> list[dict[str, Any]]:
+        """Lists snapshots for a run without the (potentially large) state fields."""
+        cursor = await self._conn.execute(
+            "SELECT snapshot_id, step_index, timestamp, agent_name, event_id FROM snapshots "
+            "WHERE run_id = ? ORDER BY step_index ASC",
+            (run_id,),
+        )
+        rows = await cursor.fetchall()
+        return [_row_to_snapshot_summary(row) for row in rows]
+
+    async def get_snapshot(self, snapshot_id: str) -> dict[str, Any] | None:
+        """Fetches one snapshot's full detail, including `graph_state`/`messages`/`tool_results`."""
+        cursor = await self._conn.execute(
+            "SELECT snapshot_id, run_id, event_id, step_index, timestamp, agent_name, "
+            "graph_state, messages, tool_results, metadata FROM snapshots WHERE snapshot_id = ?",
+            (snapshot_id,),
+        )
+        row = await cursor.fetchone()
+        return _row_to_snapshot(row) if row else None
+
     async def list_runs(self) -> list[dict[str, Any]]:
         cursor = await self._conn.execute(
             "SELECT run_id, started_at, finished_at, framework, agent_count, "
@@ -223,4 +271,29 @@ def _row_to_event(row: aiosqlite.Row) -> dict[str, Any]:
         "output_tokens": row["output_tokens"],
         "data": json.loads(row["data"]),
         "error": row["error"],
+    }
+
+
+def _row_to_snapshot_summary(row: aiosqlite.Row) -> dict[str, Any]:
+    return {
+        "snapshot_id": row["snapshot_id"],
+        "step_index": row["step_index"],
+        "timestamp": row["timestamp"],
+        "agent_name": row["agent_name"],
+        "event_id": row["event_id"],
+    }
+
+
+def _row_to_snapshot(row: aiosqlite.Row) -> dict[str, Any]:
+    return {
+        "snapshot_id": row["snapshot_id"],
+        "run_id": row["run_id"],
+        "event_id": row["event_id"],
+        "step_index": row["step_index"],
+        "timestamp": row["timestamp"],
+        "agent_name": row["agent_name"],
+        "graph_state": json.loads(row["graph_state"]),
+        "messages": json.loads(row["messages"]),
+        "tool_results": json.loads(row["tool_results"]),
+        "metadata": json.loads(row["metadata"]),
     }

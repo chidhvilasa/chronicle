@@ -48,9 +48,17 @@ class ChronicleTracer:
     def __init__(self, run_id=None, server_url=DEFAULT_SERVER_URL, batch_size=10, timeout=2.0, local_dir=DEFAULT_LOCAL_DIR): ...
     def record_event(self, event_type, data=None, agent_name=None, duration_ms=None, token_usage=None, error=None) -> ChronicleEvent: ...
     def record_snapshot(self, snapshot: StateSnapshot) -> threading.Thread: ...
+    def register_graph(self, graph, module_path: str, attr_name: str) -> bool: ...
     def flush(self) -> None: ...
     def close(self) -> None: ...
 ```
+
+`register_graph` calls `POST /register` with `{graph_module, graph_attr}`
+only — `graph` itself is accepted for a natural call site but never sent
+over the wire (no pickling; the server re-imports the graph itself). Returns
+`True`/`False` for whether the server acknowledged it; never raises.
+`LangGraphAdapter(tracer, graph=..., graph_module=..., graph_attr=...)`
+calls this automatically at construction time when all three are given.
 
 `record_event` buffers a `ChronicleEvent` and auto-flushes once the buffer
 reaches `batch_size`. `flush()` POSTs each buffered event to the Chronicle
@@ -233,18 +241,52 @@ for now, with no read/query endpoint yet (see Phase 10).
 | ------ | ---------------------- | ----------------------------------------------------- |
 | GET    | `/health`              | Liveness check; returns `{status, version}`            |
 | POST   | `/events`               | Ingest a batch of events; returns `{count}` written    |
-| POST   | `/snapshots`            | Ingest a batch of state snapshots; returns `{count}` written (write-only for now; see Phase 10) |
+| POST   | `/snapshots`            | Ingest a batch of state snapshots; returns `{count}` written |
+| POST   | `/register`             | Register a LangGraph graph by `{graph_module, graph_attr}` for replay |
+| GET    | `/registry`             | List registered graph names                              |
+| POST   | `/replay`               | Start a replay from a snapshot; returns `{run_id}` of the new run immediately |
 | GET    | `/runs`                 | List all runs, newest first, with summary stats        |
 | GET    | `/runs/{id}/events`     | List all events for a run, chronological                |
 | GET    | `/runs/{id}/timeline`   | Per-agent lanes of segments, shaped by `server/src/timeline.py` |
+| GET    | `/runs/{id}/snapshots`  | List a run's snapshots (summary only), ordered by `step_index` |
+| GET    | `/runs/{id}/snapshots/{snapshot_id}` | Full snapshot detail, incl. `graph_state`/`messages`/`tool_results` |
 | DELETE | `/runs/{id}`            | Delete a run and all its events and snapshots            |
 
-`GET /runs/{id}/events`, `GET /runs/{id}/timeline`, and `DELETE /runs/{id}`
-all 404 when the run doesn't exist. Every error response — 404s, 422
-validation errors, everything else — has the same shape:
+`GET /runs/{id}/events`, `GET /runs/{id}/timeline`, `GET /runs/{id}/snapshots`,
+and `DELETE /runs/{id}` all 404 when the run doesn't exist.
+`GET /runs/{id}/snapshots/{snapshot_id}` 404s if the snapshot doesn't exist
+*or* belongs to a different run. `POST /replay` 400s with "No graph
+registered. Call tracer.register_graph() before replaying." if nothing has
+been registered yet. Every error response has the same shape:
 `{"error": "<short_code>", "detail": "<human-readable message>"}`, produced
 by global `StarletteHTTPException`/`RequestValidationError` handlers in
 `server/src/main.py`.
+
+### Replay engine (`server/src/replay.py`, `server/src/registry.py`)
+
+`GraphRegistry` holds at most a handful of graph objects in memory, keyed by
+`"{graph_module}.{graph_attr}"`; `get_active()` returns the most recently
+registered one, which is what `POST /replay` uses (there's no per-run
+graph selection yet — one server process is expected to have one agent's
+graph registered at a time). `ReplayEngine.start_replay(snapshot,
+modifications, new_run_id, source_run_id)`:
+
+1. Stamps the new run's `metadata` (`is_replay`/`source_run_id`/
+   `source_snapshot_id`/`step_index`) immediately, before doing anything
+   slow, so the run shows up in `GET /runs` right away.
+2. Copies the snapshot's `graph_state` and applies `modifications` on top
+   (a shallow `dict.update`) — no deep-merge, so a modification key
+   replaces that key's entire value rather than merging into it.
+3. Lazily imports `chronicle` (the SDK); if it isn't installed, marks the
+   run `"failed"` and returns instead of crashing the server.
+4. Builds a fresh `ChronicleTracer(run_id=new_run_id)` and
+   `LangGraphAdapter`, then calls `graph.invoke(state, config={"callbacks":
+   [adapter]})` inside `asyncio.to_thread` — every event and snapshot the
+   replayed graph produces is recorded under `new_run_id` through the exact
+   same instrumentation path a live agent uses.
+5. Flushes the tracer, then writes the final `"complete"`/`"failed"`
+   status — in that order, so the status write is never clobbered by the
+   aggregate refresh that flushing triggers.
 
 ### Timeline shaping (`server/src/timeline.py`)
 
@@ -490,26 +532,48 @@ either way).
   Release); security review (no secrets, CORS restricted, prod console
   stripped); README/CHANGELOG/KNOWN_ISSUES brought up to date for a public
   v0.1.0 tag.
-- **Phase 9 — State snapshots in the SDK** *(this phase)*: added
+- **Phase 9 — State snapshots in the SDK**: added
   `chronicle.models.StateSnapshot` and `ChronicleTracer.record_snapshot()`
   (background-thread delivery, `chronicle_runs/{run_id}_snapshots.json`
   fallback). `LangGraphAdapter` now captures a snapshot after every
   `on_chain_end` and `on_agent_finish`, converting non-JSON-serializable
   graph-state values to strings via a new `_json_safe()` helper rather than
   crashing the agent. Added the server's `snapshots` table and a
-  write-only `POST /snapshots` (no read/query endpoint yet — that's Phase
-  10, alongside the actual replay engine these snapshots exist for).
-  Incidentally fixed a real bug found while touching `tracer.py`:
-  `flush()` was POSTing a bare event object to `/events` instead of a
-  single-item list, which the server's `list[EventIn]` body would have
-  rejected with a 422 against any real (non-fallback) delivery — no
-  existing test caught it because every SDK test points at an unreachable
-  server.
-- **Future work**: Phase 10's replay engine (querying snapshots, stepping
-  through a run), live WebSocket timeline updates, run search/filter in the
-  sidebar, latency/error-rate analytics dashboards, CrewAI/AutoGen
-  adapters, an accessibility pass, and a public docs site remain
-  unscheduled beyond that.
+  write-only `POST /snapshots`. Incidentally fixed a real bug found while
+  touching `tracer.py`: `flush()` was POSTing a bare event object to
+  `/events` instead of a single-item list, which the server's
+  `list[EventIn]` body would have rejected with a 422 against any real
+  (non-fallback) delivery — no existing test caught it because every SDK
+  test points at an unreachable server.
+- **Phase 10 — Replay engine in the server** *(this phase)*: added
+  `GET /runs/{id}/snapshots` (step-ordered summaries) and
+  `GET /runs/{id}/snapshots/{snapshot_id}` (full detail, incl.
+  `graph_state`). Added `server/src/registry.py`'s `GraphRegistry` —
+  `POST /register` imports a graph by `{graph_module, graph_attr}` (never
+  pickled: unpickling a request body would be remote code execution) and
+  holds it in memory for the server process's lifetime; `GET /registry`
+  lists registered names. Added `server/src/replay.py`'s `ReplayEngine`:
+  `POST /replay` loads a snapshot, applies `modifications` to its
+  `graph_state`, and schedules `ReplayEngine.start_replay` as a
+  `BackgroundTasks` job so the HTTP response returns immediately with the
+  new run's `run_id`. The replay itself instruments the re-invoked graph
+  with `chronicle-sdk`'s own `ChronicleTracer`/`LangGraphAdapter` — the
+  server briefly acts as the "agent process" — recording every event under
+  the new run, stamping `runs.metadata` with `{is_replay: true,
+  source_run_id, source_snapshot_id, step_index}` up front via the new
+  `Database.set_run_metadata`, and setting the final `runs.status` to
+  `"complete"`/`"failed"` via the new `Database.set_run_status` (called
+  *after* the tracer flushes, so it isn't overwritten by the normal
+  events-derived aggregate refresh). `chronicle.invoke()` runs inside
+  `asyncio.to_thread` so a slow/blocking graph never stalls the event
+  loop. `chronicle-sdk` is now an optional *runtime* dependency of
+  `chronicle-server` — a new architectural coupling that didn't exist
+  before this phase (see "Known constraints" below). Added
+  `ChronicleTracer.register_graph()` and auto-registration via
+  `LangGraphAdapter(..., graph=, graph_module=, graph_attr=)`.
+- **Future work**: run search/filter in the sidebar, latency/error-rate
+  analytics dashboards, CrewAI/AutoGen adapters, an accessibility pass, and
+  a public docs site remain unscheduled beyond Phase 11.
 
 ## 6. Known constraints
 
@@ -522,6 +586,15 @@ either way).
   events into `chronicle_runs/{run_id}.json` when the server is
   unreachable, so instrumentation never blocks or loses data because the
   UI happens to be closed.
+- **`chronicle-server` now optionally depends on `chronicle-sdk` at runtime
+  (as of Phase 10)**: this is a new architectural coupling — before the
+  replay engine, `/server` and `/sdk` were fully independent packages.
+  `server/src/replay.py` lazily imports `chronicle` so the rest of the
+  server keeps working even if it isn't installed (replay just fails
+  cleanly, marking the run `"failed"`); CI's `server-tests` job now
+  installs `sdk` before `server` so this path is actually exercised, and a
+  real deployment needs both installed in the same Python environment for
+  replay to work.
 - **The Tauri app doesn't bundle the server as a real sidecar (as of Phase
   4)**: `start_chronicle_server`/`stop_chronicle_server` spawn `python -m
   uvicorn` as a plain child process pointed at the sibling `/server` dev

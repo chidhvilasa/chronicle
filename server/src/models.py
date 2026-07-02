@@ -47,11 +47,7 @@ class EventIn(BaseModel):
 
 
 class SnapshotIn(BaseModel):
-    """Shape of one state snapshot as sent by chronicle-sdk's `LangGraphAdapter`.
-
-    Ingestion-only for now (see `POST /snapshots`); reading these back for
-    the replay engine is Phase 10's job.
-    """
+    """Shape of one state snapshot as sent by chronicle-sdk's `LangGraphAdapter`."""
 
     snapshot_id: str
     run_id: str
@@ -63,6 +59,50 @@ class SnapshotIn(BaseModel):
     tool_results: list[Any] = []
     graph_state: dict[str, Any] = {}
     metadata: dict[str, Any] = {}
+
+
+class SnapshotSummaryOut(BaseModel):
+    """Shape of one snapshot in `GET /runs/{id}/snapshots` — no `graph_state`/messages."""
+
+    snapshot_id: str
+    step_index: int
+    timestamp: float
+    agent_name: str | None
+    event_id: str | None
+
+
+class SnapshotOut(BaseModel):
+    """Full snapshot detail, from `GET /runs/{id}/snapshots/{snapshot_id}`."""
+
+    snapshot_id: str
+    run_id: str
+    event_id: str | None
+    step_index: int
+    timestamp: float
+    agent_name: str | None
+    graph_state: dict[str, Any]
+    messages: list[Any]
+    tool_results: list[Any]
+    metadata: dict[str, Any]
+
+
+class ReplayRequest(BaseModel):
+    run_id: str
+    snapshot_id: str
+    modifications: dict[str, Any] = {}
+
+
+class ReplayResponse(BaseModel):
+    run_id: str
+
+
+class RegisterGraphRequest(BaseModel):
+    graph_module: str
+    graph_attr: str
+
+
+class RegisterGraphResponse(BaseModel):
+    name: str
 
 
 class EventOut(BaseModel):

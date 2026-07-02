@@ -28,11 +28,24 @@ logger = logging.getLogger("chronicle")
 class LangGraphAdapter(_BaseCallbackHandler):  # type: ignore[misc]
     """Forwards LangGraph/LangChain lifecycle callbacks to a `ChronicleTracer`."""
 
-    def __init__(self, tracer: ChronicleTracer, agent_name: str = "agent") -> None:
+    def __init__(
+        self,
+        tracer: ChronicleTracer,
+        agent_name: str = "agent",
+        graph: Any = None,
+        graph_module: str | None = None,
+        graph_attr: str | None = None,
+    ) -> None:
+        """`graph`/`graph_module`/`graph_attr` are optional; if all three are given, the
+        graph is auto-registered with the server (via `tracer.register_graph`) so
+        `POST /replay` can re-invoke it later. See `ChronicleTracer.register_graph`.
+        """
         self.tracer = tracer
         self.agent_name = agent_name
         self._pending: dict[UUID, dict[str, Any]] = {}
         self._step_index = 0
+        if graph is not None and graph_module is not None and graph_attr is not None:
+            tracer.register_graph(graph, graph_module, graph_attr)
 
     def on_llm_start(
         self, serialized: dict[str, Any], prompts: list[str], *, run_id: UUID, **kwargs: Any

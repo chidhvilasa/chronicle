@@ -30,6 +30,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install chronicle-sdk
+        # The replay engine (server/src/replay.py) instruments replayed runs
+        # with chronicle-sdk's ChronicleTracer/LangGraphAdapter, so it must
+        # be importable alongside the server in tests too.
+        working-directory: sdk
+        run: pip install -e .
       - name: Install chronicle-server
         working-directory: server
         run: pip install -e ".[dev]"

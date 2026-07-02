@@ -1,5 +1,7 @@
 import json
 
+import httpx
+
 from chronicle import ChronicleTracer
 
 
@@ -76,3 +78,29 @@ def test_context_manager_flushes_on_exit(tmp_path):
     assert path.exists()
     events = _read_local_events(tmp_path, run_id)
     assert events[0]["error"] == "boom"
+
+
+def test_register_graph_returns_false_and_does_not_raise_when_server_unreachable(tmp_path):
+    tracer = _unreachable_tracer(tmp_path)
+
+    result = tracer.register_graph(object(), "myapp.agent", "graph")
+
+    assert result is False
+    tracer.close()
+
+
+def test_register_graph_posts_module_path_and_attr_name_not_the_graph_object(tmp_path, monkeypatch):
+    tracer = _unreachable_tracer(tmp_path)
+    captured: dict[str, object] = {}
+
+    def fake_post(url, json=None, **kwargs):
+        captured["url"] = url
+        captured["json"] = json
+        raise httpx.ConnectError("simulated")
+
+    monkeypatch.setattr(tracer._client, "post", fake_post)
+    tracer.register_graph(object(), "myapp.agent", "graph")
+
+    assert captured["url"] == f"{tracer.server_url}/register"
+    assert captured["json"] == {"graph_module": "myapp.agent", "graph_attr": "graph"}
+    tracer.close()

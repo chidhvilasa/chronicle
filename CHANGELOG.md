@@ -20,7 +20,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `chronicle-server`: a `snapshots` table (indexed on `run_id` and
   `step_index`) and a write-only `POST /snapshots` endpoint accepting a
   batch of snapshots; `DELETE /runs/{id}` now also deletes the run's
-  snapshots. No read/query endpoint yet — that's Phase 10.
+  snapshots.
+- `chronicle-server`: the replay engine. `GET /runs/{id}/snapshots` (summary,
+  step-ordered) and `GET /runs/{id}/snapshots/{snapshot_id}` (full detail).
+  `server/src/registry.py`'s `GraphRegistry` + `POST /register` /
+  `GET /registry` register a LangGraph graph by `{graph_module, graph_attr}`
+  — imported, never pickled. `server/src/replay.py`'s `ReplayEngine` +
+  `POST /replay` load a snapshot, apply `modifications` to its
+  `graph_state`, and schedule the re-invocation as a `BackgroundTasks` job
+  (so the response returns a new `run_id` immediately); the replayed graph
+  is instrumented with `chronicle-sdk`'s own `ChronicleTracer`/
+  `LangGraphAdapter`, stamping `runs.metadata` with `{is_replay: true,
+  source_run_id, source_snapshot_id, step_index}` and a final
+  `"complete"`/`"failed"` status via two new `Database` methods
+  (`set_run_metadata`, `set_run_status`). `chronicle-sdk` is now an
+  optional runtime dependency of `chronicle-server` (lazily imported; CI's
+  `server-tests` job installs both).
+- `chronicle-sdk`: `ChronicleTracer.register_graph()` (`POST /register`,
+  module-path only, never pickled) and auto-registration via
+  `LangGraphAdapter(tracer, graph=, graph_module=, graph_attr=)`.
 
 ### Fixed
 

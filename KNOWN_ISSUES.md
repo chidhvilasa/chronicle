@@ -2,12 +2,23 @@
 
 ## v0.1.0 scope
 
-- **Replay engine is not implemented yet**: as of Phase 9, `chronicle-sdk`
-  captures the state snapshots a replay engine would need (see "State
-  snapshots" below), and the server stores them, but there is still no
-  step-by-step "replay" of a captured run — no query endpoint to read
-  snapshots back, and no UI to re-execute or step through an agent's saved
-  states. See `CHRONICLE_PLAN.md`'s Phase 10; this is planned future work.
+- **Replay has no UI yet (as of Phase 10)**: the server can now register a
+  LangGraph graph (`POST /register`) and replay a run from any captured
+  snapshot (`POST /replay`), but there's no way to trigger this from the
+  desktop app — no "Replay from here" button, no way to view or pick a
+  snapshot visually. The only way to replay a run today is to call the
+  server's API directly. UI is planned for Phase 11.
+- **Replay requires the graph to be registered first**: `POST /replay`
+  400s with "No graph registered. Call tracer.register_graph() before
+  replaying." if nothing has been registered in the current server
+  process. There's also only ever one "active" registered graph — the most
+  recently registered one — so a server tracing multiple distinct agents
+  at once can only replay whichever was registered last.
+- **Replay doesn't know or guard against side effects**: `ReplayEngine`
+  just calls `graph.invoke()` again. If the original run's tools made real
+  API calls, sent messages, or wrote to a database, replaying it will do
+  those things again — there's no dry-run mode or side-effect detection.
+  Only replay runs you're comfortable re-executing for real.
 - **Only a LangGraph/LangChain adapter is available**: `chronicle-sdk` ships
   `chronicle.adapters.langgraph.LangGraphAdapter`. There is no CrewAI or
   AutoGen adapter yet — instrumenting agents built on those frameworks
@@ -53,11 +64,6 @@
 - **No schema migrations yet**: The server's SQLite schema is created with
   `CREATE TABLE IF NOT EXISTS` and has no migration system. Schema changes
   between versions may require deleting the local database file.
-- **`POST /snapshots` has no read counterpart yet (as of Phase 9)**: the
-  `snapshots` table fills up, but there's no `GET /runs/{id}/snapshots` or
-  similar to read them back — nothing in the server or app can query
-  captured state snapshots yet. That's Phase 10, alongside the replay
-  engine itself.
 - **State snapshots are not concurrency-safe locally, and can be lost on
   process exit (as of Phase 9)**: `ChronicleTracer.record_snapshot()` ships
   each snapshot on its own daemon `threading.Thread`, guarded by a lock only
@@ -73,6 +79,29 @@
   keeps messages/tool results under different keys will still be captured
   in full inside `graph_state`, but `StateSnapshot.messages`/`tool_results`
   will be empty.
+- **`chronicle-server` now has an optional runtime dependency on
+  `chronicle-sdk` (as of Phase 10)**: `server/src/replay.py` imports
+  `chronicle` to instrument replayed runs. It's a lazy import (guarded by
+  `try/except ImportError`, marking the replay run `"failed"` rather than
+  crashing the server), but both packages must be installed in the same
+  Python environment for replay to actually work — `pip install -e ./sdk`
+  alongside `pip install -e ./server`. CI's `server-tests` job does this;
+  a from-source deployment needs to as well.
+- **Replay's "invoke or stream" choice always uses `.invoke()` (as of Phase
+  10)**: the Phase 10 spec calls for detecting whether the original run
+  used `graph.invoke()` or `graph.stream()` (from run metadata) and
+  matching it, but nothing currently records which one a live run used, so
+  `ReplayEngine` always calls `.invoke()`.
+- **Replay modifications are a shallow overlay on `graph_state` (as of
+  Phase 10)**: `ReplayEngine` does `dict.update(modifications)` — a
+  modification key replaces that key's entire value. There's no deep-merge
+  for nested structures (e.g. overriding one message in a `messages` list
+  requires supplying the whole new list).
+- **No schema validation on replay `modifications` (as of Phase 10)**:
+  `POST /replay`'s `modifications` field accepts any JSON object; there's
+  no check that the keys/shapes make sense for the target graph's state
+  schema before invoking it. A bad modification just surfaces as whatever
+  error the graph itself raises, and the replay run is marked `"failed"`.
 
 ## App
 

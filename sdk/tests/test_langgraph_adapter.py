@@ -1,6 +1,7 @@
 import json
 import uuid
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 from chronicle import ChronicleTracer
 from chronicle.adapters.langgraph import LangGraphAdapter
@@ -114,3 +115,30 @@ def test_on_chain_error_records_error_event(tmp_path):
     assert events[0]["event_type"] == "error"
     assert events[0]["error"] == "boom"
     assert events[0]["data"]["error_type"] == "ValueError"
+
+
+def test_auto_registers_graph_when_graph_module_and_attr_are_given():
+    tracer = MagicMock(spec=ChronicleTracer)
+    graph = object()
+
+    LangGraphAdapter(tracer, graph=graph, graph_module="myapp.agent", graph_attr="graph")
+
+    tracer.register_graph.assert_called_once_with(graph, "myapp.agent", "graph")
+
+
+def test_does_not_register_graph_when_module_or_attr_is_missing():
+    tracer = MagicMock(spec=ChronicleTracer)
+
+    LangGraphAdapter(tracer, graph=object())
+    LangGraphAdapter(tracer, graph_module="myapp.agent")
+    LangGraphAdapter(tracer, graph_attr="graph")
+
+    tracer.register_graph.assert_not_called()
+
+
+def test_does_not_register_graph_by_default():
+    tracer = MagicMock(spec=ChronicleTracer)
+
+    LangGraphAdapter(tracer)
+
+    tracer.register_graph.assert_not_called()
