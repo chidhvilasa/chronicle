@@ -2,11 +2,12 @@
 
 ## v0.1.0 scope
 
-- **Replay engine is not implemented yet**: Chronicle records and displays
-  runs (timeline, inspector, diff), but there is no step-by-step "replay" of
-  a captured run — re-executing an agent's steps interactively, or stepping
-  through a run's LLM/tool calls one at a time with playback controls. See
-  `CHRONICLE_PLAN.md`'s roadmap; this is planned future work.
+- **Replay engine is not implemented yet**: as of Phase 9, `chronicle-sdk`
+  captures the state snapshots a replay engine would need (see "State
+  snapshots" below), and the server stores them, but there is still no
+  step-by-step "replay" of a captured run — no query endpoint to read
+  snapshots back, and no UI to re-execute or step through an agent's saved
+  states. See `CHRONICLE_PLAN.md`'s Phase 10; this is planned future work.
 - **Only a LangGraph/LangChain adapter is available**: `chronicle-sdk` ships
   `chronicle.adapters.langgraph.LangGraphAdapter`. There is no CrewAI or
   AutoGen adapter yet — instrumenting agents built on those frameworks
@@ -52,6 +53,26 @@
 - **No schema migrations yet**: The server's SQLite schema is created with
   `CREATE TABLE IF NOT EXISTS` and has no migration system. Schema changes
   between versions may require deleting the local database file.
+- **`POST /snapshots` has no read counterpart yet (as of Phase 9)**: the
+  `snapshots` table fills up, but there's no `GET /runs/{id}/snapshots` or
+  similar to read them back — nothing in the server or app can query
+  captured state snapshots yet. That's Phase 10, alongside the replay
+  engine itself.
+- **State snapshots are not concurrency-safe locally, and can be lost on
+  process exit (as of Phase 9)**: `ChronicleTracer.record_snapshot()` ships
+  each snapshot on its own daemon `threading.Thread`, guarded by a lock only
+  around the local-file fallback write (not the HTTP attempt). If the
+  process exits immediately after the last snapshot is captured, that
+  thread may not finish before the interpreter shuts down, and the snapshot
+  can be silently dropped. `ChronicleTracer.close()` does not wait for
+  outstanding snapshot threads — only for buffered events.
+- **Graph-state extraction assumes the LangGraph convention of
+  `state["messages"]`/`state["tool_results"]` (as of Phase 9)**: the
+  LangGraph adapter's snapshot capture looks for those two keys specifically
+  and defaults to `[]` if they're missing or not lists. A graph state that
+  keeps messages/tool results under different keys will still be captured
+  in full inside `graph_state`, but `StateSnapshot.messages`/`tool_results`
+  will be empty.
 
 ## App
 

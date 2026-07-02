@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `chronicle-sdk`: `chronicle.models.StateSnapshot` and
+  `ChronicleTracer.record_snapshot()`, for the future replay engine.
+  Snapshots ship to `POST /snapshots` on a background `threading.Thread`
+  (never blocking the agent), falling back to
+  `chronicle_runs/{run_id}_snapshots.json` if the server is unreachable.
+  `LangGraphAdapter` now captures a snapshot after every `on_chain_end` and
+  `on_agent_finish`, with a new `_json_safe()` helper that recursively
+  converts non-JSON-serializable graph-state values to strings (flagging
+  `metadata["_serialization_warning"]`) instead of crashing the agent.
+- `chronicle-server`: a `snapshots` table (indexed on `run_id` and
+  `step_index`) and a write-only `POST /snapshots` endpoint accepting a
+  batch of snapshots; `DELETE /runs/{id}` now also deletes the run's
+  snapshots. No read/query endpoint yet — that's Phase 10.
+
+### Fixed
+
+- `chronicle-sdk`: `ChronicleTracer.flush()` was POSTing a bare event object
+  to `/events` (`json=event.to_dict()`) instead of the single-item list the
+  server's `list[EventIn]` body expects — every real (non-fallback) event
+  delivery would have 422'd. Found while touching `tracer.py` for this
+  phase; no prior test caught it since every SDK test points at an
+  unreachable server. Fixed to `json=[event.to_dict()]`.
+
 ## [0.1.0] - 2026-07-02
 
 First public release. Chronicle instruments a LangGraph agent, ships trace

@@ -1,7 +1,7 @@
 """Chronicle SDK: instrument AI agents and ship traces to a Chronicle server."""
 
 from chronicle.adapters.langgraph import LangGraphAdapter
-from chronicle.models import ChronicleEvent, EventType, TokenUsage
+from chronicle.models import ChronicleEvent, EventType, StateSnapshot, TokenUsage
 from chronicle.tracer import ChronicleTracer
 
 __version__ = "0.1.0"
@@ -11,6 +11,7 @@ __all__ = [
     "LangGraphAdapter",
     "ChronicleEvent",
     "EventType",
+    "StateSnapshot",
     "TokenUsage",
     "__version__",
 ]

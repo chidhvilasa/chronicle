@@ -36,9 +36,24 @@ CREATE TABLE IF NOT EXISTS events (
     error TEXT
 );
 
+CREATE TABLE IF NOT EXISTS snapshots (
+    snapshot_id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL,
+    event_id TEXT,
+    step_index INTEGER NOT NULL,
+    timestamp REAL NOT NULL,
+    agent_name TEXT,
+    graph_state TEXT NOT NULL DEFAULT '{}',
+    messages TEXT NOT NULL DEFAULT '[]',
+    tool_results TEXT NOT NULL DEFAULT '[]',
+    metadata TEXT NOT NULL DEFAULT '{}'
+);
+
 CREATE INDEX IF NOT EXISTS idx_runs_run_id ON runs (run_id);
 CREATE INDEX IF NOT EXISTS idx_events_run_id ON events (run_id);
 CREATE INDEX IF NOT EXISTS idx_events_event_type ON events (event_type);
+CREATE INDEX IF NOT EXISTS idx_snapshots_run_id ON snapshots (run_id);
+CREATE INDEX IF NOT EXISTS idx_snapshots_step_index ON snapshots (step_index);
 """
 
 
@@ -116,6 +131,33 @@ class Database:
             (run_id, started_at, finished_at, agent_count, total_tokens or 0, status),
         )
 
+    async def insert_snapshots(self, snapshots: list[dict[str, Any]]) -> int:
+        """Insert a batch of state snapshots. Snapshots don't affect run aggregates."""
+        if not snapshots:
+            return 0
+        await self._conn.executemany(
+            "INSERT OR REPLACE INTO snapshots "
+            "(snapshot_id, run_id, event_id, step_index, timestamp, agent_name, "
+            "graph_state, messages, tool_results, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    s["snapshot_id"],
+                    s["run_id"],
+                    s.get("event_id"),
+                    s["step_index"],
+                    s["timestamp"],
+                    s.get("agent_name"),
+                    json.dumps(s.get("graph_state") or {}),
+                    json.dumps(s.get("messages") or []),
+                    json.dumps(s.get("tool_results") or []),
+                    json.dumps(s.get("metadata") or {}),
+                )
+                for s in snapshots
+            ],
+        )
+        await self._conn.commit()
+        return len(snapshots)
+
     async def list_runs(self) -> list[dict[str, Any]]:
         cursor = await self._conn.execute(
             "SELECT run_id, started_at, finished_at, framework, agent_count, "
@@ -149,6 +191,7 @@ class Database:
         if run is None:
             return False
         await self._conn.execute("DELETE FROM events WHERE run_id = ?", (run_id,))
+        await self._conn.execute("DELETE FROM snapshots WHERE run_id = ?", (run_id,))
         await self._conn.execute("DELETE FROM runs WHERE run_id = ?", (run_id,))
         await self._conn.commit()
         return True

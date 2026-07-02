@@ -2,17 +2,21 @@
 
 from __future__ import annotations
 
+import logging
+import threading
 import uuid
 from pathlib import Path
 from typing import Any
 
 import httpx
 
-from chronicle.models import ChronicleEvent, EventType, TokenUsage
-from chronicle.storage import DEFAULT_LOCAL_DIR, write_local_events
+from chronicle.models import ChronicleEvent, EventType, StateSnapshot, TokenUsage
+from chronicle.storage import DEFAULT_LOCAL_DIR, write_local_events, write_local_snapshots
 
 DEFAULT_SERVER_URL = "http://127.0.0.1:7823"
 DEFAULT_BATCH_SIZE = 10
+
+logger = logging.getLogger("chronicle")
 
 
 class ChronicleTracer:
@@ -22,6 +26,11 @@ class ChronicleTracer:
     `POST /events`. If the server is unreachable, the remaining events in the
     batch are written to `chronicle_runs/{run_id}.json` instead, so no traces
     are lost while the desktop app isn't running.
+
+    State snapshots (see `chronicle.models.StateSnapshot`) are shipped
+    separately via `POST /snapshots`, always in a background thread, since
+    they can be large and must never block the agent (falling back to
+    `chronicle_runs/{run_id}_snapshots.json` on failure, same as events).
     """
 
     def __init__(
@@ -38,6 +47,7 @@ class ChronicleTracer:
         self.local_dir = local_dir
         self._client = httpx.Client(timeout=timeout)
         self._buffer: list[ChronicleEvent] = []
+        self._snapshot_write_lock = threading.Lock()
 
     def record_event(
         self,
@@ -71,7 +81,7 @@ class ChronicleTracer:
 
         for index, event in enumerate(batch):
             try:
-                response = self._client.post(f"{self.server_url}/events", json=event.to_dict())
+                response = self._client.post(f"{self.server_url}/events", json=[event.to_dict()])
                 response.raise_for_status()
             except httpx.HTTPError:
                 unsent = batch[index:]
@@ -81,6 +91,33 @@ class ChronicleTracer:
                     local_dir=self.local_dir,
                 )
                 break
+
+    def record_snapshot(self, snapshot: StateSnapshot) -> threading.Thread:
+        """Ships a state snapshot to the server on a background thread.
+
+        Returns the `Thread` immediately without waiting for it, so callers
+        (the agent, via an adapter) are never blocked by potentially large
+        snapshot payloads. The thread is a daemon thread: it won't keep the
+        process alive, but it also won't guarantee delivery if the process
+        exits before it finishes.
+        """
+        thread = threading.Thread(target=self._send_snapshot, args=(snapshot,), daemon=True)
+        thread.start()
+        return thread
+
+    def _send_snapshot(self, snapshot: StateSnapshot) -> None:
+        try:
+            response = self._client.post(f"{self.server_url}/snapshots", json=[snapshot.to_dict()])
+            response.raise_for_status()
+        except httpx.HTTPError:
+            with self._snapshot_write_lock:
+                write_local_snapshots(
+                    self.run_id,
+                    [snapshot.to_dict()],
+                    local_dir=self.local_dir,
+                )
+        except Exception:  # pragma: no cover - defensive: never crash the agent
+            logger.warning("Chronicle: failed to send state snapshot", exc_info=True)
 
     def close(self) -> None:
         self.flush()

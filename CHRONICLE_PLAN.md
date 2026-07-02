@@ -47,18 +47,29 @@ run (`run_id`). See `sdk/src/chronicle/tracer.py`.
 class ChronicleTracer:
     def __init__(self, run_id=None, server_url=DEFAULT_SERVER_URL, batch_size=10, timeout=2.0, local_dir=DEFAULT_LOCAL_DIR): ...
     def record_event(self, event_type, data=None, agent_name=None, duration_ms=None, token_usage=None, error=None) -> ChronicleEvent: ...
+    def record_snapshot(self, snapshot: StateSnapshot) -> threading.Thread: ...
     def flush(self) -> None: ...
     def close(self) -> None: ...
 ```
 
 `record_event` buffers a `ChronicleEvent` and auto-flushes once the buffer
 reaches `batch_size`. `flush()` POSTs each buffered event to the Chronicle
-server; the first `httpx.HTTPError` in a batch (server not running,
-connection refused, timeout) stops further POSTs for that batch and writes
-the remaining unsent events to `chronicle_runs/{run_id}.json` via
-`sdk/src/chronicle/storage.py`'s `write_local_events`, so nothing already
-sent is duplicated and nothing unsent is lost. `ChronicleTracer` is also a
-context manager that flushes on `__exit__`.
+server as a single-item batch (`POST /events` always takes a list); the
+first `httpx.HTTPError` in a batch (server not running, connection refused,
+timeout) stops further POSTs for that batch and writes the remaining unsent
+events to `chronicle_runs/{run_id}.json` via `sdk/src/chronicle/storage.py`'s
+`write_local_events`, so nothing already sent is duplicated and nothing
+unsent is lost. `ChronicleTracer` is also a context manager that flushes on
+`__exit__`.
+
+`record_snapshot` is the one exception to "buffer, then flush synchronously":
+state snapshots can be large (see `StateSnapshot` below), so they're always
+shipped on a background `threading.Thread` — the call returns the `Thread`
+immediately without waiting for the HTTP request, so capturing a snapshot
+never blocks the agent. On failure it falls back to
+`chronicle_runs/{run_id}_snapshots.json` (via `write_local_snapshots`),
+guarded by an internal lock since multiple snapshot threads can be in
+flight at once.
 
 ### Event types
 
@@ -75,14 +86,28 @@ context manager that flushes on `__exit__`.
 
 `chronicle.adapters.langgraph.LangGraphAdapter` forwards LangChain/LangGraph
 lifecycle callbacks (`on_llm_start`, `on_llm_end`, `on_tool_start`,
-`on_tool_end`, `on_agent_action`, `on_agent_finish`, `on_chain_error`) to a
-`ChronicleTracer`. It correlates each `*_start`/`*_end` pair by LangChain's
-own per-call `run_id` (a `uuid.UUID`, distinct from `ChronicleTracer.run_id`)
-to compute `duration_ms`, and extracts `token_usage` from
-`LLMResult.llm_output["token_usage"]` when the provider populates it. It
-subclasses `langchain_core.callbacks.BaseCallbackHandler` when
-`langchain_core` is installed, and degrades to a plain duck-typed object
-otherwise, so `chronicle-sdk` has no hard dependency on LangChain.
+`on_tool_end`, `on_agent_action`, `on_agent_finish`, `on_chain_end`,
+`on_chain_error`) to a `ChronicleTracer`. It correlates each `*_start`/
+`*_end` pair by LangChain's own per-call `run_id` (a `uuid.UUID`, distinct
+from `ChronicleTracer.run_id`) to compute `duration_ms`, and extracts
+`token_usage` from `LLMResult.llm_output["token_usage"]` when the provider
+populates it. It subclasses `langchain_core.callbacks.BaseCallbackHandler`
+when `langchain_core` is installed, and degrades to a plain duck-typed
+object otherwise, so `chronicle-sdk` has no hard dependency on LangChain.
+
+**State snapshots** (for the future replay engine): every `on_chain_end`
+call, and every `on_agent_finish` call (via `finish.return_values`, when
+present), also captures a `StateSnapshot` of the graph state at that step —
+`self._step_index` increments once per snapshot, giving each one a stable
+0-based position in the run. Before building the snapshot, the adapter runs
+the raw LangGraph output dict through `_json_safe()`, a recursive helper
+that walks dicts/lists and converts any non-JSON-native leaf (LangChain
+message objects, datetimes, arbitrary classes, ...) to its `str()` form,
+setting `metadata["_serialization_warning"] = True` if it had to convert
+anything. `_capture_snapshot()` wraps all of this in a broad
+`try/except Exception` and only logs a warning on failure — a broken or
+unusual graph state can never crash the agent, per Chronicle's zero-impact
+design.
 
 ### Python event model (dataclasses)
 
@@ -112,6 +137,29 @@ class ChronicleEvent:
 
 `ChronicleEvent.to_dict()` / `TokenUsage.to_dict()` produce the JSON payload
 sent to `POST /events` and written to `chronicle_runs/{run_id}.json`.
+
+### State snapshots (dataclass)
+
+```python
+@dataclass
+class StateSnapshot:
+    run_id: str
+    step_index: int
+    event_id: str | None = None
+    agent_name: str | None = None
+    messages: list[Any] = field(default_factory=list)
+    tool_results: list[Any] = field(default_factory=list)
+    graph_state: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
+    snapshot_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    timestamp: float = field(default_factory=time.time)
+```
+
+`StateSnapshot.to_dict()` produces the JSON payload sent to `POST
+/snapshots` and written to `chronicle_runs/{run_id}_snapshots.json`. By the
+time a `StateSnapshot` is constructed, `graph_state`/`messages`/
+`tool_results` are already guaranteed JSON-safe (see the LangGraph adapter's
+`_json_safe()` above) — the model itself does no serialization-safety work.
 
 ## 3. Server design (`/server`)
 
@@ -148,9 +196,24 @@ CREATE TABLE events (
     error TEXT
 );
 
+CREATE TABLE snapshots (
+    snapshot_id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL,
+    event_id TEXT,
+    step_index INTEGER NOT NULL,
+    timestamp REAL NOT NULL,
+    agent_name TEXT,
+    graph_state TEXT NOT NULL DEFAULT '{}',
+    messages TEXT NOT NULL DEFAULT '[]',
+    tool_results TEXT NOT NULL DEFAULT '[]',
+    metadata TEXT NOT NULL DEFAULT '{}'
+);
+
 CREATE INDEX idx_runs_run_id ON runs (run_id);
 CREATE INDEX idx_events_run_id ON events (run_id);
 CREATE INDEX idx_events_event_type ON events (event_type);
+CREATE INDEX idx_snapshots_run_id ON snapshots (run_id);
+CREATE INDEX idx_snapshots_step_index ON snapshots (step_index);
 ```
 
 `runs` rows are never written incrementally: every `POST /events` batch
@@ -161,6 +224,8 @@ for each affected `run_id` directly from its rows in `events` (see
 otherwise `'running'` — there's no explicit "run finished" signal yet (see
 `KNOWN_ISSUES.md`). `total_cost_usd` and `framework` have no producer yet and
 stay at their defaults (`0`, `null`) until a future phase populates them.
+`snapshots` rows don't affect run aggregates at all — they're pure ingestion
+for now, with no read/query endpoint yet (see Phase 10).
 
 ### Endpoints
 
@@ -168,10 +233,11 @@ stay at their defaults (`0`, `null`) until a future phase populates them.
 | ------ | ---------------------- | ----------------------------------------------------- |
 | GET    | `/health`              | Liveness check; returns `{status, version}`            |
 | POST   | `/events`               | Ingest a batch of events; returns `{count}` written    |
+| POST   | `/snapshots`            | Ingest a batch of state snapshots; returns `{count}` written (write-only for now; see Phase 10) |
 | GET    | `/runs`                 | List all runs, newest first, with summary stats        |
 | GET    | `/runs/{id}/events`     | List all events for a run, chronological                |
 | GET    | `/runs/{id}/timeline`   | Per-agent lanes of segments, shaped by `server/src/timeline.py` |
-| DELETE | `/runs/{id}`            | Delete a run and all its events                         |
+| DELETE | `/runs/{id}`            | Delete a run and all its events and snapshots            |
 
 `GET /runs/{id}/events`, `GET /runs/{id}/timeline`, and `DELETE /runs/{id}`
 all 404 when the run doesn't exist. Every error response — 404s, 422
@@ -424,10 +490,26 @@ either way).
   Release); security review (no secrets, CORS restricted, prod console
   stripped); README/CHANGELOG/KNOWN_ISSUES brought up to date for a public
   v0.1.0 tag.
-- **Future work**: live WebSocket timeline updates, step-by-step visual
-  replay, run search/filter in the sidebar, latency/error-rate analytics
-  dashboards, CrewAI/AutoGen adapters, an accessibility pass, and a public
-  docs site remain unscheduled beyond v0.1.0.
+- **Phase 9 — State snapshots in the SDK** *(this phase)*: added
+  `chronicle.models.StateSnapshot` and `ChronicleTracer.record_snapshot()`
+  (background-thread delivery, `chronicle_runs/{run_id}_snapshots.json`
+  fallback). `LangGraphAdapter` now captures a snapshot after every
+  `on_chain_end` and `on_agent_finish`, converting non-JSON-serializable
+  graph-state values to strings via a new `_json_safe()` helper rather than
+  crashing the agent. Added the server's `snapshots` table and a
+  write-only `POST /snapshots` (no read/query endpoint yet — that's Phase
+  10, alongside the actual replay engine these snapshots exist for).
+  Incidentally fixed a real bug found while touching `tracer.py`:
+  `flush()` was POSTing a bare event object to `/events` instead of a
+  single-item list, which the server's `list[EventIn]` body would have
+  rejected with a 422 against any real (non-fallback) delivery — no
+  existing test caught it because every SDK test points at an unreachable
+  server.
+- **Future work**: Phase 10's replay engine (querying snapshots, stepping
+  through a run), live WebSocket timeline updates, run search/filter in the
+  sidebar, latency/error-rate analytics dashboards, CrewAI/AutoGen
+  adapters, an accessibility pass, and a public docs site remain
+  unscheduled beyond that.
 
 ## 6. Known constraints
 

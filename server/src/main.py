@@ -14,7 +14,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from src import __version__
 from src.database import DEFAULT_DB_PATH, Database
-from src.models import EventIn, EventOut, HealthOut, RunOut, TimelineOut
+from src.models import EventIn, EventOut, HealthOut, RunOut, SnapshotIn, TimelineOut
 from src.timeline import build_timeline
 
 DEFAULT_HOST = "127.0.0.1"
@@ -89,6 +89,12 @@ async def health() -> HealthOut:
 @app.post("/events")
 async def create_events(events: list[EventIn]) -> dict[str, int]:
     count = await app.state.db.insert_events([event.to_row() for event in events])
+    return {"count": count}
+
+
+@app.post("/snapshots")
+async def create_snapshots(snapshots: list[SnapshotIn]) -> dict[str, int]:
+    count = await app.state.db.insert_snapshots([snapshot.model_dump() for snapshot in snapshots])
     return {"count": count}
 
 

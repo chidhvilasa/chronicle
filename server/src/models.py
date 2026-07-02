@@ -46,6 +46,25 @@ class EventIn(BaseModel):
         }
 
 
+class SnapshotIn(BaseModel):
+    """Shape of one state snapshot as sent by chronicle-sdk's `LangGraphAdapter`.
+
+    Ingestion-only for now (see `POST /snapshots`); reading these back for
+    the replay engine is Phase 10's job.
+    """
+
+    snapshot_id: str
+    run_id: str
+    event_id: str | None = None
+    step_index: int
+    timestamp: float
+    agent_name: str | None = None
+    messages: list[Any] = []
+    tool_results: list[Any] = []
+    graph_state: dict[str, Any] = {}
+    metadata: dict[str, Any] = {}
+
+
 class EventOut(BaseModel):
     """Shape of one event as stored and read back from SQLite."""
 
