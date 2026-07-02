@@ -56,6 +56,16 @@ graph = chronicle.instrument(graph)
 
 Open the Chronicle desktop app. Run your agent. That is it.
 
+## Framework support
+
+| Framework | Status |
+| --- | --- |
+| LangGraph | Supported |
+| OpenAI Agents SDK | Supported |
+| PydanticAI | Supported |
+| CrewAI | Coming in v0.4.0 |
+| AutoGen | Coming in v0.4.0 |
+
 ## Getting started (development)
 
 ### SDK

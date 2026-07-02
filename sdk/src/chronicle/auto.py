@@ -1,10 +1,10 @@
 """Zero-friction auto-instrumentation: `chronicle.instrument(obj)`.
 
-Detects which framework `obj` belongs to (LangGraph today; more frameworks
-land in later phases) and wires up the matching adapter automatically,
-starting the Chronicle server in the background if one isn't already
-running. No manual `ChronicleTracer`/adapter construction required — see
-`README.md`'s Quickstart.
+Detects which framework `obj` belongs to (LangGraph, OpenAI Agents SDK, or
+PydanticAI) and wires up the matching adapter automatically, starting the
+Chronicle server in the background if one isn't already running. No manual
+`ChronicleTracer`/adapter construction required — see `README.md`'s
+Quickstart.
 """
 
 from __future__ import annotations
@@ -16,10 +16,12 @@ from contextlib import contextmanager
 from typing import Any, Iterator, Literal
 
 from chronicle.adapters.langgraph import LangGraphAdapter
+from chronicle.adapters.openai_agents import ChronicleAgentHooks
+from chronicle.adapters.pydanticai import ChronicleMiddleware
 from chronicle.server_manager import ServerManager
 from chronicle.tracer import ChronicleTracer
 
-FrameworkName = Literal["langgraph", "unknown"]
+FrameworkName = Literal["langgraph", "openai_agents", "pydanticai", "unknown"]
 
 _UNKNOWN_FRAMEWORK_MESSAGE = (
     "Chronicle: detected unknown framework type. LangGraph, OpenAI Agents SDK, "
@@ -31,15 +33,20 @@ def _detect_framework(obj: Any) -> FrameworkName:
     """Identifies which supported framework `obj` came from.
 
     Detection is by module path and class name only — it never imports
-    `langgraph` to do this, so calling `instrument()` never raises
-    `ImportError` for a framework that isn't installed (and works against
-    plain mock objects in tests, which don't need the real framework
-    installed either).
+    `langgraph`, `agents`, or `pydantic_ai` to do this, so calling
+    `instrument()` never raises `ImportError` for a framework that isn't
+    installed (and works against plain mock objects in tests, which don't
+    need the real frameworks installed either).
     """
     module_root = (type(obj).__module__ or "").split(".")[0]
+    class_name = type(obj).__name__
 
     if module_root in ("langgraph", "langchain_core", "langchain"):
         return "langgraph"
+    if module_root == "agents" and class_name == "Agent":
+        return "openai_agents"
+    if module_root == "pydantic_ai" and class_name == "Agent":
+        return "pydanticai"
     return "unknown"
 
 
@@ -118,6 +125,16 @@ def _instrument_langgraph(graph: Any, tracer: ChronicleTracer, agent_name: str) 
     return wrapped
 
 
+def _instrument_openai_agents(agent: Any, tracer: ChronicleTracer, agent_name: str) -> Any:
+    hooks = ChronicleAgentHooks(tracer, agent_name=getattr(agent, "name", None) or agent_name)
+    agent.hooks = hooks
+    return agent
+
+
+def _instrument_pydanticai(agent: Any, tracer: ChronicleTracer, agent_name: str) -> Any:
+    return ChronicleMiddleware(agent, tracer, agent_name=agent_name)
+
+
 def _build(obj: Any, agent_name: str | None) -> tuple[Any, ChronicleTracer]:
     """Shared wiring logic behind both `instrument()` and `instrument_context()`."""
     tracer = ChronicleTracer()
@@ -126,6 +143,10 @@ def _build(obj: Any, agent_name: str | None) -> tuple[Any, ChronicleTracer]:
     framework = _detect_framework(obj)
     if framework == "langgraph":
         result = _instrument_langgraph(obj, tracer, resolved_name)
+    elif framework == "openai_agents":
+        result = _instrument_openai_agents(obj, tracer, resolved_name)
+    elif framework == "pydanticai":
+        result = _instrument_pydanticai(obj, tracer, resolved_name)
     else:
         print(_UNKNOWN_FRAMEWORK_MESSAGE)
         result = obj
