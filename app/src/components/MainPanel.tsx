@@ -1,6 +1,7 @@
 import { useAppStore } from "../store/useAppStore";
 import { Diff } from "./Diff";
 import { Timeline } from "./Timeline";
+import { Tests } from "./Tests/Tests";
 import { InspectorPanel } from "./panels/InspectorPanel";
 
 /** Main content area; renders whichever panel the top nav's tabs select. */
@@ -17,6 +18,7 @@ export function MainPanel() {
       )}
       {activePanel === "inspector" && <InspectorPanel />}
       {activePanel === "diff" && <Diff />}
+      {activePanel === "tests" && <Tests />}
     </main>
   );
 }

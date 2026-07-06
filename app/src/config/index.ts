@@ -27,3 +27,6 @@ export const REPLAY_POLL_TIMEOUT_MS = 60000;
 
 /** How long a toast notification stays on screen before auto-dismissing, in ms. */
 export const TOAST_DURATION_MS = 8000;
+
+/** How often the Tests tab polls `GET /tests`, in ms. */
+export const TEST_LIST_POLL_INTERVAL_MS = 5000;

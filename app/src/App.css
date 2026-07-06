@@ -740,6 +740,200 @@
   color: #888;
 }
 
+/* Tests panel */
+
+.run-card-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.run-card-create-test {
+  align-self: flex-end;
+  border: 1px solid #d0d0d0;
+  background: none;
+  border-radius: 4px;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.tests-root {
+  height: 100%;
+  overflow-y: auto;
+}
+
+.test-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.test-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-radius: 6px;
+  padding: 0.3rem 0.4rem;
+}
+
+.test-row-main {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr auto;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  text-align: left;
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 0.3rem;
+  border-radius: 6px;
+}
+
+.test-row-main:hover {
+  background-color: #e8e8e8;
+}
+
+.test-row-name {
+  font-weight: 600;
+}
+
+.test-row-meta {
+  font-size: 0.8rem;
+  color: #555;
+}
+
+.test-row-actions {
+  display: flex;
+  gap: 0.3rem;
+  align-items: center;
+}
+
+.test-delete-confirm {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.test-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  text-align: center;
+}
+
+.test-badge-pass {
+  background-color: #d4edda;
+  color: #155724;
+}
+
+.test-badge-fail {
+  background-color: #f8d7da;
+  color: #721c24;
+}
+
+.test-badge-error {
+  background-color: #fff3cd;
+  color: #856404;
+}
+
+.test-badge-never {
+  background-color: #e0e0e0;
+  color: #555;
+}
+
+.test-result-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.test-result-back {
+  align-self: flex-start;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: #396cd8;
+  padding: 0;
+  font-size: 0.85rem;
+}
+
+.test-result-source {
+  color: #555;
+  font-size: 0.85rem;
+}
+
+.test-result-history-bar {
+  display: flex;
+  gap: 0.2rem;
+}
+
+.history-block {
+  width: 1.5rem;
+  height: 1rem;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+.history-block-pass {
+  background-color: #2e9e4f;
+}
+
+.history-block-fail {
+  background-color: #d64545;
+}
+
+.history-block-error {
+  background-color: #eab308;
+}
+
+.assertion-result-list {
+  list-style: none;
+  margin: 0.4rem 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+}
+
+.create-test-modal {
+  width: 520px;
+}
+
+.create-test-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  margin: 0.5rem 0;
+}
+
+.create-test-assertions {
+  margin: 0.75rem 0;
+}
+
+.assertion-row {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr auto auto;
+  gap: 0.4rem;
+  align-items: center;
+  margin-bottom: 0.4rem;
+  font-size: 0.8rem;
+}
+
+.assertion-on-fail {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.75rem;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     color: #f6f6f6;
@@ -832,5 +1026,19 @@
 
   .diff-same {
     color: #999;
+  }
+
+  .test-row-main:hover {
+    background-color: #3a3a3a;
+  }
+
+  .test-row-meta,
+  .test-result-source {
+    color: #bbb;
+  }
+
+  .run-card-create-test {
+    border-color: #4a4a4a;
+    color: #f6f6f6;
   }
 }

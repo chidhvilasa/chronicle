@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RunList } from "../RunList";
 import { useAppStore } from "../../store/useAppStore";
@@ -10,7 +10,7 @@ vi.mock("../../api/client", async () => {
   const actual = await vi.importActual<typeof import("../../api/client")>("../../api/client");
   return {
     ...actual,
-    chronicleApi: { listRuns: vi.fn() },
+    chronicleApi: { listRuns: vi.fn(), listRunSnapshots: vi.fn().mockResolvedValue([]), createTest: vi.fn() },
   };
 });
 
@@ -110,6 +110,17 @@ describe("RunList", () => {
       expect(screen.getByText(/42 tokens/)).toBeInTheDocument();
     });
     expect(screen.queryByTestId("replay-badge")).not.toBeInTheDocument();
+  });
+
+  it("opens the create-test modal with the run's id pre-filled when Create Test is clicked", async () => {
+    vi.mocked(chronicleApi.listRuns).mockResolvedValue([run]);
+    render(<RunList />);
+
+    await screen.findByText(/42 tokens/);
+    fireEvent.click(screen.getByRole("button", { name: "Create Test" }));
+
+    expect(screen.getByTestId("create-test-modal")).toBeInTheDocument();
+    expect(screen.getByDisplayValue(run.run_id)).toBeInTheDocument();
   });
 
   it("polls GET /runs on the configured interval", async () => {

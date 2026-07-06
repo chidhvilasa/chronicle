@@ -1,11 +1,14 @@
 import { FETCH_TIMEOUT_MS } from "../config";
 import type {
+  ChronicleAssertion,
+  ChronicleTest,
   Event,
   HealthStatus,
   ReplayResponse,
   Run,
   Snapshot,
   SnapshotSummary,
+  TestResult,
   Timeline,
 } from "../types";
 
@@ -85,4 +88,26 @@ export const chronicleApi = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ run_id: runId, snapshot_id: snapshotId, modifications }),
     }),
+  listTests: (): Promise<ChronicleTest[]> => request("/tests"),
+  getTest: (testId: string): Promise<ChronicleTest> => request(`/tests/${testId}`),
+  createTest: (params: {
+    name: string;
+    sourceRunId: string;
+    sourceSnapshotId: string | null;
+    assertions: Omit<ChronicleAssertion, "assertion_id">[];
+  }): Promise<ChronicleTest> =>
+    request("/tests", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: params.name,
+        source_run_id: params.sourceRunId,
+        source_snapshot_id: params.sourceSnapshotId,
+        assertions: params.assertions,
+      }),
+    }),
+  deleteTest: (testId: string): Promise<void> => request(`/tests/${testId}`, { method: "DELETE" }),
+  runTest: (testId: string): Promise<TestResult> =>
+    request(`/tests/${testId}/run`, { method: "POST" }),
+  getTestHistory: (testId: string): Promise<TestResult[]> => request(`/tests/${testId}/history`),
 };

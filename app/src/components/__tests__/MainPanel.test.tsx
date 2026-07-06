@@ -7,7 +7,7 @@ vi.mock("../../api/client", async () => {
   const actual = await vi.importActual<typeof import("../../api/client")>("../../api/client");
   return {
     ...actual,
-    chronicleApi: { getRunTimeline: vi.fn(), listRunEvents: vi.fn() },
+    chronicleApi: { getRunTimeline: vi.fn(), listRunEvents: vi.fn(), listTests: vi.fn().mockResolvedValue([]) },
   };
 });
 
@@ -33,5 +33,11 @@ describe("MainPanel", () => {
     useAppStore.getState().setActivePanel("diff");
     render(<MainPanel />);
     expect(screen.getByTestId("diff-root")).toBeInTheDocument();
+  });
+
+  it("renders the tests panel when activePanel is tests", () => {
+    useAppStore.getState().setActivePanel("tests");
+    render(<MainPanel />);
+    expect(screen.getByTestId("tests-root")).toBeInTheDocument();
   });
 });

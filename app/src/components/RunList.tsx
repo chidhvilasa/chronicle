@@ -1,8 +1,9 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { chronicleApi, ChronicleApiError } from "../api/client";
 import { RUN_LIST_POLL_INTERVAL_MS } from "../config";
 import { useAppStore } from "../store/useAppStore";
 import { getReplayMetadata, type Run } from "../types";
+import { CreateTestModal } from "./Tests/CreateTestModal";
 
 function formatRelativeTime(unixSeconds: number): string {
   const diffSeconds = Math.max(0, Math.round(Date.now() / 1000 - unixSeconds));
@@ -32,11 +33,21 @@ function statusBadge(status: string): "running" | "complete" | "failed" {
   return "running";
 }
 
-function RunCard({ run, isSelected, onSelect }: { run: Run; isSelected: boolean; onSelect: () => void }) {
+function RunCard({
+  run,
+  isSelected,
+  onSelect,
+  onCreateTest,
+}: {
+  run: Run;
+  isSelected: boolean;
+  onSelect: () => void;
+  onCreateTest: () => void;
+}) {
   const badge = statusBadge(run.status);
   const replayMeta = getReplayMetadata(run);
   return (
-    <li>
+    <li className="run-card-item">
       <button type="button" className={isSelected ? "run-card active" : "run-card"} onClick={onSelect}>
         <span className="run-card-id-row">
           <span className="run-card-id">{truncateRunId(run.run_id)}</span>
@@ -55,6 +66,16 @@ function RunCard({ run, isSelected, onSelect }: { run: Run; isSelected: boolean;
         <span className="run-card-meta">{run.total_tokens} tokens</span>
         <span className="run-card-meta">{formatDuration(run.started_at, run.finished_at)}</span>
       </button>
+      <button
+        type="button"
+        className="run-card-create-test"
+        onClick={(event) => {
+          event.stopPropagation();
+          onCreateTest();
+        }}
+      >
+        Create Test
+      </button>
     </li>
   );
 }
@@ -69,6 +90,7 @@ export function RunList() {
   const setLoading = useAppStore((state) => state.setLoading);
   const setError = useAppStore((state) => state.setError);
   const selectRun = useAppStore((state) => state.selectRun);
+  const [createTestRunId, setCreateTestRunId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -129,9 +151,13 @@ export function RunList() {
             run={run}
             isSelected={run.run_id === selectedRunId}
             onSelect={() => selectRun(run.run_id)}
+            onCreateTest={() => setCreateTestRunId(run.run_id)}
           />
         ))}
       </ul>
+      {createTestRunId !== null && (
+        <CreateTestModal sourceRunId={createTestRunId} onClose={() => setCreateTestRunId(null)} />
+      )}
     </aside>
   );
 }

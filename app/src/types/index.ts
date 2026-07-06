@@ -115,3 +115,58 @@ export function getReplayMetadata(run: Run): ReplayMetadata | null {
   if (typeof stepIndex !== "number") return null;
   return { sourceRunId, sourceSnapshotId, stepIndex };
 }
+
+export type AssertionType =
+  | "output_contains"
+  | "output_not_contains"
+  | "output_matches_regex"
+  | "tool_called"
+  | "tool_not_called"
+  | "token_count_under"
+  | "latency_under_ms"
+  | "no_errors"
+  | "custom";
+
+export type OnFail = "fail" | "warn";
+
+export type TestStatus = "pass" | "fail" | "error";
+
+export interface ChronicleAssertion {
+  assertion_id: string | null;
+  assertion_type: AssertionType;
+  target: string;
+  agent_name: string | null;
+  on_fail: OnFail;
+}
+
+export interface ChronicleTest {
+  test_id: string;
+  name: string;
+  source_run_id: string;
+  source_snapshot_id: string | null;
+  assertions: ChronicleAssertion[];
+  created_at: number;
+  last_run_at: number | null;
+  last_result: TestStatus | null;
+}
+
+export interface AssertionResult {
+  assertion_id: string;
+  assertion_type: string;
+  passed: boolean;
+  reason: string;
+  on_fail: OnFail;
+}
+
+export interface TestResult {
+  result_id: string;
+  test_id: string;
+  replay_run_id: string | null;
+  status: TestStatus;
+  passed: boolean;
+  assertion_results: AssertionResult[];
+  duration_ms: number | null;
+  token_usage: { input_tokens: number | null; output_tokens: number | null } | null;
+  error_reason: string | null;
+  created_at: number;
+}
