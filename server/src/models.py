@@ -159,6 +159,79 @@ class HealthOut(BaseModel):
     version: str
 
 
+class MetricsOverviewOut(BaseModel):
+    """Aggregate stats across every run with a `run_metrics` row, from `GET /metrics/overview`."""
+
+    total_runs: int
+    total_tokens: int
+    total_cost_usd: float
+    avg_run_duration_ms: float
+    total_errors: int
+    runs_last_7_days: int
+    tokens_last_7_days: int
+    cost_last_7_days: float
+    most_expensive_run_id: str | None
+    slowest_run_id: str | None
+    cost_is_estimate: Literal[True] = True
+
+
+class RunMetricsOut(BaseModel):
+    """One `run_metrics` row, from `GET /metrics/runs`."""
+
+    run_id: str
+    total_duration_ms: float
+    total_input_tokens: int
+    total_output_tokens: int
+    total_tokens: int
+    estimated_cost_usd: float
+    llm_call_count: int
+    tool_call_count: int
+    error_count: int
+    retry_count: int
+    avg_llm_latency_ms: float | None
+    p95_llm_latency_ms: float | None
+    avg_tool_latency_ms: float | None
+    p95_tool_latency_ms: float | None
+    framework: str | None
+    agent_count: int
+    created_at: float
+    cost_is_estimate: Literal[True] = True
+
+
+class TrendPointOut(BaseModel):
+    """One time-bucketed data point, from `GET /metrics/trends`."""
+
+    bucket: str
+    value: float
+
+
+class ToolMetricsOut(BaseModel):
+    """One tool's aggregate performance across every run, from `GET /metrics/tools`."""
+
+    tool_name: str
+    call_count: int
+    avg_latency_ms: float | None
+    p95_latency_ms: float | None
+    error_rate: float
+    total_tokens: int
+
+
+class ModelMetricsOut(BaseModel):
+    """One model's aggregate usage across every run, from `GET /metrics/models`."""
+
+    model_name: str
+    call_count: int
+    avg_latency_ms: float | None
+    total_input_tokens: int
+    total_output_tokens: int
+    total_cost_usd: float
+    cost_is_estimate: Literal[True] = True
+
+
+class BackfillResponse(BaseModel):
+    backfilled_count: int
+
+
 AssertionTypeLiteral = Literal[
     "output_contains",
     "output_not_contains",

@@ -92,3 +92,5 @@ class ReplayEngine:
             await asyncio.to_thread(tracer.close)
 
         await self.db.set_run_status(new_run_id, final_status)
+        if final_status == "complete":
+            await self.db.compute_run_metrics(new_run_id)

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import datetime
 import json
+import statistics
 import time
 from pathlib import Path
 from typing import Any
@@ -10,6 +12,16 @@ from typing import Any
 import aiosqlite
 
 DEFAULT_DB_PATH = Path.home() / ".chronicle" / "chronicle.db"
+
+# Cost estimation constants for `run_metrics.estimated_cost_usd` and the
+# `/metrics/*` endpoints. These are flat per-token prices, not real
+# per-model billing - see KNOWN_ISSUES.md. Events whose `data["model"]`
+# contains "gpt-4" are priced at the GPT-4 rate; everything else (including
+# events with no captured model name) falls back to the default rate.
+GPT4_INPUT_COST_PER_TOKEN = 0.00001
+GPT4_OUTPUT_COST_PER_TOKEN = 0.00003
+DEFAULT_INPUT_COST_PER_TOKEN = 0.000003
+DEFAULT_OUTPUT_COST_PER_TOKEN = 0.000015
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
@@ -74,6 +86,26 @@ CREATE TABLE IF NOT EXISTS test_results (
     created_at REAL NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS run_metrics (
+    run_id TEXT PRIMARY KEY,
+    total_duration_ms REAL NOT NULL DEFAULT 0,
+    total_input_tokens INTEGER NOT NULL DEFAULT 0,
+    total_output_tokens INTEGER NOT NULL DEFAULT 0,
+    total_tokens INTEGER NOT NULL DEFAULT 0,
+    estimated_cost_usd REAL NOT NULL DEFAULT 0,
+    llm_call_count INTEGER NOT NULL DEFAULT 0,
+    tool_call_count INTEGER NOT NULL DEFAULT 0,
+    error_count INTEGER NOT NULL DEFAULT 0,
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    avg_llm_latency_ms REAL,
+    p95_llm_latency_ms REAL,
+    avg_tool_latency_ms REAL,
+    p95_tool_latency_ms REAL,
+    framework TEXT,
+    agent_count INTEGER NOT NULL DEFAULT 0,
+    created_at REAL NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_runs_run_id ON runs (run_id);
 CREATE INDEX IF NOT EXISTS idx_events_run_id ON events (run_id);
 CREATE INDEX IF NOT EXISTS idx_events_event_type ON events (event_type);
@@ -81,7 +113,36 @@ CREATE INDEX IF NOT EXISTS idx_snapshots_run_id ON snapshots (run_id);
 CREATE INDEX IF NOT EXISTS idx_snapshots_step_index ON snapshots (step_index);
 CREATE INDEX IF NOT EXISTS idx_tests_created_at ON tests (created_at);
 CREATE INDEX IF NOT EXISTS idx_test_results_test_id ON test_results (test_id);
+CREATE INDEX IF NOT EXISTS idx_run_metrics_created_at ON run_metrics (created_at);
+CREATE INDEX IF NOT EXISTS idx_run_metrics_framework ON run_metrics (framework);
 """
+
+
+def _percentile(values: list[float], pct: float) -> float | None:
+    """Linear-interpolation percentile (numpy's default method). `pct` is 0-1."""
+    if not values:
+        return None
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+    rank = (len(ordered) - 1) * pct
+    lower = int(rank)
+    upper = min(lower + 1, len(ordered) - 1)
+    fraction = rank - lower
+    return ordered[lower] + (ordered[upper] - ordered[lower]) * fraction
+
+
+def _event_cost_usd(event: dict[str, Any]) -> float:
+    """Estimates one event's cost from its token counts and (if present) its model name.
+
+    Always an estimate, never real per-model billing - see KNOWN_ISSUES.md.
+    """
+    input_tokens = event.get("input_tokens") or 0
+    output_tokens = event.get("output_tokens") or 0
+    model = str((event.get("data") or {}).get("model", "")).lower()
+    if "gpt-4" in model:
+        return input_tokens * GPT4_INPUT_COST_PER_TOKEN + output_tokens * GPT4_OUTPUT_COST_PER_TOKEN
+    return input_tokens * DEFAULT_INPUT_COST_PER_TOKEN + output_tokens * DEFAULT_OUTPUT_COST_PER_TOKEN
 
 
 class Database:
@@ -270,6 +331,302 @@ class Database:
         await self._conn.commit()
         return True
 
+    async def compute_run_metrics(self, run_id: str) -> dict[str, Any] | None:
+        """Aggregates one run's events into a `run_metrics` row and upserts it.
+
+        Returns the computed row, or `None` if the run doesn't exist. Safe to
+        call repeatedly (e.g. from the backfill endpoint) - each call fully
+        recomputes the row from `events`/`runs`, so it can never drift.
+        """
+        run = await self.get_run(run_id)
+        if run is None:
+            return None
+        events = await self.list_events(run_id)
+
+        llm_events = [e for e in events if e["event_type"] == "llm_call"]
+        tool_events = [e for e in events if e["event_type"] == "tool_call"]
+        llm_durations = [e["duration_ms"] for e in llm_events if e["duration_ms"] is not None]
+        tool_durations = [e["duration_ms"] for e in tool_events if e["duration_ms"] is not None]
+
+        total_input_tokens = sum(e["input_tokens"] or 0 for e in events)
+        total_output_tokens = sum(e["output_tokens"] or 0 for e in events)
+
+        row = {
+            "run_id": run_id,
+            "total_duration_ms": max(0.0, (run["finished_at"] - run["started_at"]) * 1000),
+            "total_input_tokens": total_input_tokens,
+            "total_output_tokens": total_output_tokens,
+            "total_tokens": total_input_tokens + total_output_tokens,
+            "estimated_cost_usd": sum(_event_cost_usd(e) for e in events),
+            "llm_call_count": len(llm_events),
+            "tool_call_count": len(tool_events),
+            "error_count": sum(1 for e in events if e["event_type"] == "error"),
+            "retry_count": sum(1 for e in events if e["event_type"] == "retry"),
+            "avg_llm_latency_ms": statistics.fmean(llm_durations) if llm_durations else None,
+            "p95_llm_latency_ms": _percentile(llm_durations, 0.95),
+            "avg_tool_latency_ms": statistics.fmean(tool_durations) if tool_durations else None,
+            "p95_tool_latency_ms": _percentile(tool_durations, 0.95),
+            "framework": run["framework"],
+            "agent_count": run["agent_count"],
+            "created_at": time.time(),
+        }
+
+        await self._conn.execute(
+            "INSERT INTO run_metrics (run_id, total_duration_ms, total_input_tokens, "
+            "total_output_tokens, total_tokens, estimated_cost_usd, llm_call_count, "
+            "tool_call_count, error_count, retry_count, avg_llm_latency_ms, "
+            "p95_llm_latency_ms, avg_tool_latency_ms, p95_tool_latency_ms, framework, "
+            "agent_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(run_id) DO UPDATE SET "
+            "total_duration_ms = excluded.total_duration_ms, "
+            "total_input_tokens = excluded.total_input_tokens, "
+            "total_output_tokens = excluded.total_output_tokens, "
+            "total_tokens = excluded.total_tokens, "
+            "estimated_cost_usd = excluded.estimated_cost_usd, "
+            "llm_call_count = excluded.llm_call_count, "
+            "tool_call_count = excluded.tool_call_count, "
+            "error_count = excluded.error_count, "
+            "retry_count = excluded.retry_count, "
+            "avg_llm_latency_ms = excluded.avg_llm_latency_ms, "
+            "p95_llm_latency_ms = excluded.p95_llm_latency_ms, "
+            "avg_tool_latency_ms = excluded.avg_tool_latency_ms, "
+            "p95_tool_latency_ms = excluded.p95_tool_latency_ms, "
+            "framework = excluded.framework, "
+            "agent_count = excluded.agent_count, "
+            "created_at = excluded.created_at",
+            (
+                row["run_id"],
+                row["total_duration_ms"],
+                row["total_input_tokens"],
+                row["total_output_tokens"],
+                row["total_tokens"],
+                row["estimated_cost_usd"],
+                row["llm_call_count"],
+                row["tool_call_count"],
+                row["error_count"],
+                row["retry_count"],
+                row["avg_llm_latency_ms"],
+                row["p95_llm_latency_ms"],
+                row["avg_tool_latency_ms"],
+                row["p95_tool_latency_ms"],
+                row["framework"],
+                row["agent_count"],
+                row["created_at"],
+            ),
+        )
+        await self._conn.commit()
+        return row
+
+    async def get_metrics_overview(self) -> dict[str, Any]:
+        """Aggregate stats across every run that has a `run_metrics` row."""
+        cursor = await self._conn.execute(
+            "SELECT COUNT(*), COALESCE(SUM(total_tokens), 0), COALESCE(SUM(estimated_cost_usd), 0), "
+            "COALESCE(AVG(total_duration_ms), 0), COALESCE(SUM(error_count), 0) FROM run_metrics"
+        )
+        total_runs, total_tokens, total_cost_usd, avg_run_duration_ms, total_errors = (
+            await cursor.fetchone()
+        )
+
+        cutoff = time.time() - 7 * 86400
+        cursor = await self._conn.execute(
+            "SELECT COUNT(*), COALESCE(SUM(total_tokens), 0), COALESCE(SUM(estimated_cost_usd), 0) "
+            "FROM run_metrics WHERE created_at >= ?",
+            (cutoff,),
+        )
+        runs_last_7_days, tokens_last_7_days, cost_last_7_days = await cursor.fetchone()
+
+        cursor = await self._conn.execute(
+            "SELECT run_id FROM run_metrics ORDER BY estimated_cost_usd DESC LIMIT 1"
+        )
+        most_expensive = await cursor.fetchone()
+
+        cursor = await self._conn.execute(
+            "SELECT run_id FROM run_metrics ORDER BY total_duration_ms DESC LIMIT 1"
+        )
+        slowest = await cursor.fetchone()
+
+        return {
+            "total_runs": total_runs,
+            "total_tokens": total_tokens,
+            "total_cost_usd": total_cost_usd,
+            "avg_run_duration_ms": avg_run_duration_ms,
+            "total_errors": total_errors,
+            "runs_last_7_days": runs_last_7_days,
+            "tokens_last_7_days": tokens_last_7_days,
+            "cost_last_7_days": cost_last_7_days,
+            "most_expensive_run_id": most_expensive["run_id"] if most_expensive else None,
+            "slowest_run_id": slowest["run_id"] if slowest else None,
+        }
+
+    async def list_run_metrics(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        from_date: float | None = None,
+        to_date: float | None = None,
+        framework: str | None = None,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        query = (
+            "SELECT rm.run_id, rm.total_duration_ms, rm.total_input_tokens, "
+            "rm.total_output_tokens, rm.total_tokens, rm.estimated_cost_usd, "
+            "rm.llm_call_count, rm.tool_call_count, rm.error_count, rm.retry_count, "
+            "rm.avg_llm_latency_ms, rm.p95_llm_latency_ms, rm.avg_tool_latency_ms, "
+            "rm.p95_tool_latency_ms, rm.framework, rm.agent_count, rm.created_at "
+            "FROM run_metrics rm"
+        )
+        joins = ""
+        conditions = []
+        params: list[Any] = []
+        if status is not None:
+            joins = " JOIN runs r ON rm.run_id = r.run_id"
+            conditions.append("r.status = ?")
+            params.append(status)
+        if from_date is not None:
+            conditions.append("rm.created_at >= ?")
+            params.append(from_date)
+        if to_date is not None:
+            conditions.append("rm.created_at <= ?")
+            params.append(to_date)
+        if framework is not None:
+            conditions.append("rm.framework = ?")
+            params.append(framework)
+
+        query += joins
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        query += " ORDER BY rm.created_at DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+
+        cursor = await self._conn.execute(query, params)
+        rows = await cursor.fetchall()
+        return [_row_to_run_metrics(row) for row in rows]
+
+    async def get_metrics_trends(
+        self, period: str, metric: str, stat: str = "avg"
+    ) -> list[dict[str, Any]]:
+        """Buckets `run_metrics` rows by day/week/month and aggregates one metric per bucket."""
+        cursor = await self._conn.execute(
+            "SELECT created_at, total_tokens, estimated_cost_usd, error_count, "
+            "avg_llm_latency_ms, p95_llm_latency_ms FROM run_metrics ORDER BY created_at ASC"
+        )
+        rows = await cursor.fetchall()
+
+        buckets: dict[str, list[float]] = {}
+        order: list[str] = []
+        for row in rows:
+            key = _bucket_key(row["created_at"], period)
+            if key not in buckets:
+                buckets[key] = []
+                order.append(key)
+
+            if metric == "tokens":
+                value = row["total_tokens"]
+            elif metric == "cost":
+                value = row["estimated_cost_usd"]
+            elif metric == "errors":
+                value = row["error_count"]
+            elif metric == "latency":
+                value = row["p95_llm_latency_ms"] if stat == "p95" else row["avg_llm_latency_ms"]
+            else:
+                value = None
+
+            if value is not None:
+                buckets[key].append(value)
+
+        aggregator = sum if metric in ("tokens", "cost", "errors") else statistics.fmean
+        return [
+            {"bucket": key, "value": aggregator(buckets[key]) if buckets[key] else 0.0}
+            for key in order
+        ]
+
+    async def get_tool_metrics(self) -> list[dict[str, Any]]:
+        """Aggregate tool performance across every run, ordered by call count desc."""
+        cursor = await self._conn.execute(
+            "SELECT data, duration_ms, input_tokens, output_tokens, error FROM events "
+            "WHERE event_type = 'tool_call'"
+        )
+        rows = await cursor.fetchall()
+
+        by_tool: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            data = json.loads(row["data"])
+            tool_name = data.get("tool_name") or "unknown"
+            bucket = by_tool.setdefault(
+                tool_name,
+                {"durations": [], "errors": 0, "total_tokens": 0, "call_count": 0},
+            )
+            bucket["call_count"] += 1
+            if row["duration_ms"] is not None:
+                bucket["durations"].append(row["duration_ms"])
+            if row["error"] is not None:
+                bucket["errors"] += 1
+            bucket["total_tokens"] += (row["input_tokens"] or 0) + (row["output_tokens"] or 0)
+
+        results = [
+            {
+                "tool_name": tool_name,
+                "call_count": bucket["call_count"],
+                "avg_latency_ms": statistics.fmean(bucket["durations"]) if bucket["durations"] else None,
+                "p95_latency_ms": _percentile(bucket["durations"], 0.95),
+                "error_rate": bucket["errors"] / bucket["call_count"] if bucket["call_count"] else 0.0,
+                "total_tokens": bucket["total_tokens"],
+            }
+            for tool_name, bucket in by_tool.items()
+        ]
+        return sorted(results, key=lambda r: r["call_count"], reverse=True)
+
+    async def get_model_metrics(self) -> list[dict[str, Any]]:
+        """Per-model breakdown across every run's `llm_call` events, ordered by call count desc."""
+        cursor = await self._conn.execute(
+            "SELECT data, duration_ms, input_tokens, output_tokens FROM events "
+            "WHERE event_type = 'llm_call'"
+        )
+        rows = await cursor.fetchall()
+
+        by_model: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            data = json.loads(row["data"])
+            model_name = data.get("model") or "unknown"
+            bucket = by_model.setdefault(
+                model_name,
+                {"durations": [], "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0, "call_count": 0},
+            )
+            bucket["call_count"] += 1
+            if row["duration_ms"] is not None:
+                bucket["durations"].append(row["duration_ms"])
+            bucket["input_tokens"] += row["input_tokens"] or 0
+            bucket["output_tokens"] += row["output_tokens"] or 0
+            bucket["cost_usd"] += _event_cost_usd(
+                {"input_tokens": row["input_tokens"], "output_tokens": row["output_tokens"], "data": data}
+            )
+
+        results = [
+            {
+                "model_name": model_name,
+                "call_count": bucket["call_count"],
+                "avg_latency_ms": statistics.fmean(bucket["durations"]) if bucket["durations"] else None,
+                "total_input_tokens": bucket["input_tokens"],
+                "total_output_tokens": bucket["output_tokens"],
+                "total_cost_usd": bucket["cost_usd"],
+            }
+            for model_name, bucket in by_model.items()
+        ]
+        return sorted(results, key=lambda r: r["call_count"], reverse=True)
+
+    async def backfill_run_metrics(self) -> int:
+        """Computes `run_metrics` for every complete run that doesn't have a row yet."""
+        cursor = await self._conn.execute(
+            "SELECT run_id FROM runs WHERE status = 'complete' "
+            "AND run_id NOT IN (SELECT run_id FROM run_metrics)"
+        )
+        rows = await cursor.fetchall()
+        count = 0
+        for row in rows:
+            if await self.compute_run_metrics(row["run_id"]) is not None:
+                count += 1
+        return count
+
     async def create_test(
         self,
         test_id: str,
@@ -360,6 +717,39 @@ class Database:
         )
         rows = await cursor.fetchall()
         return [_row_to_test_result(row) for row in rows]
+
+
+def _bucket_key(created_at: float, period: str) -> str:
+    """Formats an epoch timestamp into an ISO bucket key for day/week/month grouping."""
+    dt = datetime.datetime.fromtimestamp(created_at, tz=datetime.timezone.utc)
+    if period == "week":
+        week_start = dt - datetime.timedelta(days=dt.weekday())
+        return week_start.strftime("%Y-%m-%d")
+    if period == "month":
+        return dt.strftime("%Y-%m-01")
+    return dt.strftime("%Y-%m-%d")
+
+
+def _row_to_run_metrics(row: aiosqlite.Row) -> dict[str, Any]:
+    return {
+        "run_id": row["run_id"],
+        "total_duration_ms": row["total_duration_ms"],
+        "total_input_tokens": row["total_input_tokens"],
+        "total_output_tokens": row["total_output_tokens"],
+        "total_tokens": row["total_tokens"],
+        "estimated_cost_usd": row["estimated_cost_usd"],
+        "llm_call_count": row["llm_call_count"],
+        "tool_call_count": row["tool_call_count"],
+        "error_count": row["error_count"],
+        "retry_count": row["retry_count"],
+        "avg_llm_latency_ms": row["avg_llm_latency_ms"],
+        "p95_llm_latency_ms": row["p95_llm_latency_ms"],
+        "avg_tool_latency_ms": row["avg_tool_latency_ms"],
+        "p95_tool_latency_ms": row["p95_tool_latency_ms"],
+        "framework": row["framework"],
+        "agent_count": row["agent_count"],
+        "created_at": row["created_at"],
+    }
 
 
 def _row_to_run(row: aiosqlite.Row) -> dict[str, Any]:

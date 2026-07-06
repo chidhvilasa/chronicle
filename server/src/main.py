@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import time
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Any, AsyncIterator
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
@@ -17,13 +19,17 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from src import __version__
 from src.database import DEFAULT_DB_PATH, Database
 from src.models import (
+    BackfillResponse,
     EventIn,
     EventOut,
     HealthOut,
+    MetricsOverviewOut,
+    ModelMetricsOut,
     RegisterGraphRequest,
     RegisterGraphResponse,
     ReplayRequest,
     ReplayResponse,
+    RunMetricsOut,
     RunOut,
     SnapshotIn,
     SnapshotOut,
@@ -32,6 +38,8 @@ from src.models import (
     TestOut,
     TestResultOut,
     TimelineOut,
+    ToolMetricsOut,
+    TrendPointOut,
 )
 from src.registry import GraphRegistrationError, GraphRegistry
 from src.replay import ReplayEngine
@@ -52,6 +60,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await db.connect()
     app.state.db = db
     app.state.registry = GraphRegistry()
+    app.state.backfill_lock = asyncio.Lock()
     yield
     await db.close()
 
@@ -107,9 +116,22 @@ async def health() -> HealthOut:
     return HealthOut(status="ok", version=__version__)
 
 
+async def _compute_metrics_if_complete(db: Database, run_id: str) -> None:
+    """Populates `run_metrics` for a run once its status is `complete`.
+
+    Scheduled as a `BackgroundTasks` job off `POST /events` so metric
+    computation never blocks or slows down event ingestion.
+    """
+    run = await db.get_run(run_id)
+    if run is not None and run["status"] == "complete":
+        await db.compute_run_metrics(run_id)
+
+
 @app.post("/events")
-async def create_events(events: list[EventIn]) -> dict[str, int]:
+async def create_events(events: list[EventIn], background_tasks: BackgroundTasks) -> dict[str, int]:
     count = await app.state.db.insert_events([event.to_row() for event in events])
+    for run_id in {event.run_id for event in events}:
+        background_tasks.add_task(_compute_metrics_if_complete, app.state.db, run_id)
     return {"count": count}
 
 
@@ -207,6 +229,93 @@ async def delete_run(run_id: str) -> None:
     deleted = await app.state.db.delete_run(run_id)
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' was not found")
+
+
+_VALID_TREND_PERIODS = {"day", "week", "month"}
+_VALID_TREND_METRICS = {"tokens", "cost", "latency", "errors"}
+
+
+def _parse_date_param(value: str | None, field_name: str) -> float | None:
+    """Parses an ISO 8601 date/datetime query param into an epoch timestamp (UTC if no tz given)."""
+    if value is None:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid {field_name}: {value!r}") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.timestamp()
+
+
+@app.get("/metrics/overview", response_model=MetricsOverviewOut)
+async def get_metrics_overview() -> MetricsOverviewOut:
+    overview = await app.state.db.get_metrics_overview()
+    return MetricsOverviewOut(**overview)
+
+
+@app.get("/metrics/runs", response_model=list[RunMetricsOut])
+async def list_metrics_runs(
+    limit: int = 50,
+    offset: int = 0,
+    from_date: str | None = None,
+    to_date: str | None = None,
+    framework: str | None = None,
+    status: str | None = None,
+) -> list[RunMetricsOut]:
+    rows = await app.state.db.list_run_metrics(
+        limit=limit,
+        offset=offset,
+        from_date=_parse_date_param(from_date, "from_date"),
+        to_date=_parse_date_param(to_date, "to_date"),
+        framework=framework,
+        status=status,
+    )
+    return [RunMetricsOut(**row) for row in rows]
+
+
+@app.get("/metrics/trends", response_model=list[TrendPointOut])
+async def get_metrics_trends(
+    period: str = "day", metric: str = "tokens", stat: str = "avg"
+) -> list[TrendPointOut]:
+    if period not in _VALID_TREND_PERIODS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid period: {period!r}. Must be one of {sorted(_VALID_TREND_PERIODS)}",
+        )
+    if metric not in _VALID_TREND_METRICS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid metric: {metric!r}. Must be one of {sorted(_VALID_TREND_METRICS)}",
+        )
+    points = await app.state.db.get_metrics_trends(period, metric, stat)
+    return [TrendPointOut(**point) for point in points]
+
+
+@app.get("/metrics/tools", response_model=list[ToolMetricsOut])
+async def list_metrics_tools() -> list[ToolMetricsOut]:
+    tools = await app.state.db.get_tool_metrics()
+    return [ToolMetricsOut(**tool) for tool in tools]
+
+
+@app.get("/metrics/models", response_model=list[ModelMetricsOut])
+async def list_metrics_models() -> list[ModelMetricsOut]:
+    models = await app.state.db.get_model_metrics()
+    return [ModelMetricsOut(**model) for model in models]
+
+
+@app.post("/metrics/backfill", response_model=BackfillResponse)
+async def backfill_metrics() -> BackfillResponse:
+    """Computes `run_metrics` for every complete run recorded before this version.
+
+    Rate-limited to one concurrent backfill (409 if one is already running)
+    since a full backfill re-reads every complete run's events.
+    """
+    if app.state.backfill_lock.locked():
+        raise HTTPException(status_code=409, detail="A backfill is already running")
+    async with app.state.backfill_lock:
+        count = await app.state.db.backfill_run_metrics()
+    return BackfillResponse(backfilled_count=count)
 
 
 @app.post("/tests", response_model=TestOut, status_code=201)
