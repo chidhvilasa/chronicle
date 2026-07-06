@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import time
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
@@ -27,6 +28,9 @@ from src.models import (
     SnapshotIn,
     SnapshotOut,
     SnapshotSummaryOut,
+    TestIn,
+    TestOut,
+    TestResultOut,
     TimelineOut,
 )
 from src.registry import GraphRegistrationError, GraphRegistry
@@ -145,7 +149,12 @@ async def replay(request: ReplayRequest, background_tasks: BackgroundTasks) -> R
     new_run_id = str(uuid.uuid4())
     engine = ReplayEngine(db=app.state.db, graph=graph)
     background_tasks.add_task(
-        engine.start_replay, snapshot, request.modifications, new_run_id, request.run_id
+        engine.start_replay,
+        snapshot,
+        request.modifications,
+        new_run_id,
+        request.run_id,
+        extra_metadata=request.metadata,
     )
     return ReplayResponse(run_id=new_run_id)
 
@@ -198,6 +207,173 @@ async def delete_run(run_id: str) -> None:
     deleted = await app.state.db.delete_run(run_id)
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' was not found")
+
+
+@app.post("/tests", response_model=TestOut, status_code=201)
+async def create_test(request: TestIn) -> TestOut:
+    run = await app.state.db.get_run(request.source_run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run '{request.source_run_id}' was not found")
+
+    test_id = str(uuid.uuid4())
+    await app.state.db.create_test(
+        test_id=test_id,
+        name=request.name,
+        source_run_id=request.source_run_id,
+        source_snapshot_id=request.source_snapshot_id,
+        assertions=[a.model_dump() for a in request.assertions],
+        created_at=time.time(),
+    )
+    test = await app.state.db.get_test(test_id)
+    assert test is not None
+    return TestOut(**test)
+
+
+@app.get("/tests", response_model=list[TestOut])
+async def list_tests() -> list[TestOut]:
+    tests = await app.state.db.list_tests()
+    return [TestOut(**test) for test in tests]
+
+
+@app.get("/tests/{test_id}", response_model=TestOut)
+async def get_test(test_id: str) -> TestOut:
+    test = await app.state.db.get_test(test_id)
+    if test is None:
+        raise HTTPException(status_code=404, detail=f"Test '{test_id}' was not found")
+    return TestOut(**test)
+
+
+@app.delete("/tests/{test_id}", status_code=204)
+async def delete_test(test_id: str) -> None:
+    deleted = await app.state.db.delete_test(test_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Test '{test_id}' was not found")
+
+
+@app.get("/tests/{test_id}/history", response_model=list[TestResultOut])
+async def get_test_history(test_id: str) -> list[TestResultOut]:
+    test = await app.state.db.get_test(test_id)
+    if test is None:
+        raise HTTPException(status_code=404, detail=f"Test '{test_id}' was not found")
+    results = await app.state.db.list_test_results(test_id, limit=20)
+    return [TestResultOut(**result) for result in results]
+
+
+@app.post("/tests/{test_id}/run", response_model=TestResultOut)
+async def run_test(test_id: str) -> TestResultOut:
+    """Replays the test's source run and evaluates its assertions, awaiting the full result.
+
+    Unlike `POST /replay`, this does not return immediately — it runs the
+    replay to completion (via a direct, awaited `ReplayEngine.start_replay`
+    call rather than a `BackgroundTasks` job) so the caller gets a finished
+    `TestResultOut` in one request, matching the "Run" button's spinner-
+    until-done UX in the desktop app.
+    """
+    test = await app.state.db.get_test(test_id)
+    if test is None:
+        raise HTTPException(status_code=404, detail=f"Test '{test_id}' was not found")
+
+    graph = app.state.registry.get_active()
+    if graph is None:
+        raise HTTPException(
+            status_code=400,
+            detail="No graph registered. Call tracer.register_graph() before running tests.",
+        )
+
+    snapshot_id = test["source_snapshot_id"]
+    if snapshot_id is None:
+        summaries = await app.state.db.list_snapshots_summary(test["source_run_id"])
+        step_zero = next((s for s in summaries if s["step_index"] == 0), None)
+        if step_zero is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No step-0 snapshot found for run '{test['source_run_id']}'",
+            )
+        snapshot_id = step_zero["snapshot_id"]
+
+    snapshot = await app.state.db.get_snapshot(snapshot_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail=f"Snapshot '{snapshot_id}' was not found")
+
+    replay_run_id = str(uuid.uuid4())
+    engine = ReplayEngine(db=app.state.db, graph=graph)
+    await engine.start_replay(
+        snapshot,
+        {},
+        replay_run_id,
+        test["source_run_id"],
+        extra_metadata={"triggered_by": "test", "test_id": test_id},
+    )
+
+    replay_run = await app.state.db.get_run(replay_run_id)
+    events = await app.state.db.list_events(replay_run_id)
+
+    if replay_run is None or replay_run["status"] != "complete":
+        result = _error_test_result(test_id, replay_run_id, "replay run failed")
+    else:
+        try:
+            from chronicle.testing.models import ChronicleAssertion
+            from chronicle.testing.runner import evaluate_assertion, total_duration_ms, total_token_usage
+        except ImportError:
+            result = _error_test_result(
+                test_id, replay_run_id, "chronicle-sdk is not installed; cannot evaluate assertions"
+            )
+        else:
+            assertions = [ChronicleAssertion.from_dict(a) for a in test["assertions"]]
+            assertion_results = [evaluate_assertion(a, events) for a in assertions]
+            overall_passed = not any(
+                not r.passed and r.on_fail == "fail" for r in assertion_results
+            )
+            result = TestResultOut(
+                result_id=str(uuid.uuid4()),
+                test_id=test_id,
+                replay_run_id=replay_run_id,
+                status="pass" if overall_passed else "fail",
+                passed=overall_passed,
+                assertion_results=[
+                    {
+                        "assertion_id": r.assertion_id,
+                        "assertion_type": r.assertion_type,
+                        "passed": r.passed,
+                        "reason": r.reason,
+                        "on_fail": r.on_fail,
+                    }
+                    for r in assertion_results
+                ],
+                duration_ms=total_duration_ms(events),
+                token_usage=total_token_usage(events),
+                created_at=time.time(),
+            )
+
+    await app.state.db.insert_test_result(
+        result_id=result.result_id,
+        test_id=test_id,
+        replay_run_id=result.replay_run_id,
+        status=result.status,
+        passed=result.passed,
+        assertion_results=[r.model_dump() for r in result.assertion_results],
+        duration_ms=result.duration_ms,
+        token_usage=result.token_usage,
+        error_reason=result.error_reason,
+        created_at=result.created_at,
+    )
+    await app.state.db.update_test_last_result(test_id, result.status, result.created_at)
+    return result
+
+
+def _error_test_result(test_id: str, replay_run_id: str | None, reason: str) -> TestResultOut:
+    return TestResultOut(
+        result_id=str(uuid.uuid4()),
+        test_id=test_id,
+        replay_run_id=replay_run_id,
+        status="error",
+        passed=False,
+        assertion_results=[],
+        duration_ms=None,
+        token_usage=None,
+        error_reason=reason,
+        created_at=time.time(),
+    )
 
 
 if __name__ == "__main__":

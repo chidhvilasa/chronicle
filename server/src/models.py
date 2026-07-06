@@ -90,6 +90,7 @@ class ReplayRequest(BaseModel):
     run_id: str
     snapshot_id: str
     modifications: dict[str, Any] = {}
+    metadata: dict[str, Any] = {}
 
 
 class ReplayResponse(BaseModel):
@@ -156,3 +157,69 @@ class TimelineOut(BaseModel):
 class HealthOut(BaseModel):
     status: Literal["ok"]
     version: str
+
+
+AssertionTypeLiteral = Literal[
+    "output_contains",
+    "output_not_contains",
+    "output_matches_regex",
+    "tool_called",
+    "tool_not_called",
+    "token_count_under",
+    "latency_under_ms",
+    "no_errors",
+    "custom",
+]
+
+TestStatusLiteral = Literal["pass", "fail", "error"]
+
+
+class AssertionIn(BaseModel):
+    """One assertion, as sent by `POST /tests` or stored inside a test's `assertions` column."""
+
+    assertion_id: str | None = None
+    assertion_type: AssertionTypeLiteral
+    target: str
+    agent_name: str | None = None
+    on_fail: Literal["fail", "warn"] = "fail"
+
+
+class AssertionResultOut(BaseModel):
+    assertion_id: str
+    assertion_type: str
+    passed: bool
+    reason: str
+    on_fail: Literal["fail", "warn"] = "fail"
+
+
+class TestIn(BaseModel):
+    """Shape of `POST /tests`'s body."""
+
+    name: str
+    source_run_id: str
+    source_snapshot_id: str | None = None
+    assertions: list[AssertionIn] = []
+
+
+class TestOut(BaseModel):
+    test_id: str
+    name: str
+    source_run_id: str
+    source_snapshot_id: str | None
+    assertions: list[AssertionIn]
+    created_at: float
+    last_run_at: float | None
+    last_result: TestStatusLiteral | None
+
+
+class TestResultOut(BaseModel):
+    result_id: str
+    test_id: str
+    replay_run_id: str | None
+    status: TestStatusLiteral
+    passed: bool
+    assertion_results: list[AssertionResultOut]
+    duration_ms: float | None
+    token_usage: dict[str, int | None] | None
+    error_reason: str | None = None
+    created_at: float

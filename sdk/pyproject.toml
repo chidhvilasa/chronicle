@@ -23,6 +23,9 @@ dev = [
 [project.scripts]
 chronicle = "chronicle.cli:main"
 
+[project.entry-points.pytest11]
+chronicle = "chronicle.testing.pytest_plugin"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 

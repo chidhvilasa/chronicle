@@ -38,6 +38,7 @@ class ReplayEngine:
         modifications: dict[str, Any] | None,
         new_run_id: str,
         source_run_id: str,
+        extra_metadata: dict[str, Any] | None = None,
     ) -> None:
         """Applies `modifications` to the snapshot's graph state and re-invokes the graph.
 
@@ -45,6 +46,10 @@ class ReplayEngine:
         runs after the `POST /replay` response is already sent. The graph
         invocation itself runs in a worker thread (`asyncio.to_thread`) so a
         slow or blocking `graph.invoke()` never stalls the event loop.
+
+        `extra_metadata` is merged on top of the standard replay metadata —
+        used by the regression test engine to stamp
+        `{triggered_by: "test", test_id}` onto test-triggered replay runs.
         """
         await self.db.set_run_metadata(
             new_run_id,
@@ -53,6 +58,7 @@ class ReplayEngine:
                 "source_run_id": source_run_id,
                 "source_snapshot_id": snapshot["snapshot_id"],
                 "step_index": snapshot["step_index"],
+                **(extra_metadata or {}),
             },
         )
 

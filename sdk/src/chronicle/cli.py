@@ -1,4 +1,4 @@
-"""`chronicle` CLI: start/stop/status the local server, or open the desktop app.
+"""`chronicle` CLI: start/stop/status the local server, run tests, or open the desktop app.
 
 Registered as a console script via `sdk/pyproject.toml`'s
 `[project.scripts]` (`chronicle = "chronicle.cli:main"`).
@@ -11,6 +11,8 @@ import subprocess
 import sys
 
 from chronicle.server_manager import DEFAULT_HOST, DEFAULT_PORT, ServerManager
+from chronicle.testing.models import SuiteResult, TestResult
+from chronicle.testing.runner import ChronicleTestRunner
 
 _OPEN_APP_CANDIDATES = [
     ["chronicle-app"],
@@ -76,6 +78,63 @@ def _open(args: argparse.Namespace) -> int:
     return 1
 
 
+def _print_test_result(result: TestResult) -> None:
+    icon = {"pass": "PASS", "fail": "FAIL", "error": "ERROR"}[result.status]
+    print(f"[{icon}] {result.test_id}")
+    if result.error_reason is not None:
+        print(f"  {result.error_reason}")
+    for assertion in result.assertion_results:
+        mark = "ok" if assertion.passed else "FAILED"
+        print(f"  - [{mark}] {assertion.assertion_type}: {assertion.reason}")
+
+
+def _print_suite_result(suite: SuiteResult) -> None:
+    for result in suite.results:
+        _print_test_result(result)
+    print(
+        f"\n{suite.passed_count}/{suite.total} passed "
+        f"({suite.failed_count} failed, {suite.errored_count} errored)"
+    )
+
+
+def _test_run(args: argparse.Namespace) -> int:
+    with ChronicleTestRunner(server_url=f"http://{args.host}:{args.port}") as runner:
+        try:
+            if args.name is not None:
+                tests = [runner.get_test_by_name(args.name)]
+            else:
+                tests = runner.list_tests()
+        except Exception as exc:  # noqa: BLE001 - surfaced to the CLI user, not re-raised
+            print(f"Chronicle: {exc}")
+            return 1
+
+        if not tests:
+            print("Chronicle: no tests found. Create one from the desktop app first.")
+            return 0
+
+        suite = runner.run_suite(tests)
+        _print_suite_result(suite)
+        return 0 if suite.all_passed else 1
+
+
+def _test_list(args: argparse.Namespace) -> int:
+    with ChronicleTestRunner(server_url=f"http://{args.host}:{args.port}") as runner:
+        try:
+            tests = runner.list_tests()
+        except Exception as exc:  # noqa: BLE001
+            print(f"Chronicle: {exc}")
+            return 1
+
+        if not tests:
+            print("Chronicle: no tests yet. Create one from the desktop app first.")
+            return 0
+
+        for test in tests:
+            last = test.last_result or "never run"
+            print(f"{test.name} ({test.test_id})  last: {last}")
+        return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="chronicle", description="Chronicle: the Chrome DevTools for AI agents."
@@ -90,6 +149,16 @@ def main(argv: list[str] | None = None) -> int:
         func=_status
     )
     subparsers.add_parser("open", help="Open the Chronicle desktop app").set_defaults(func=_open)
+
+    test_parser = subparsers.add_parser("test", help="Run or list Chronicle regression tests")
+    test_subparsers = test_parser.add_subparsers(dest="test_command", required=True)
+
+    run_parser = test_subparsers.add_parser("run", help="Run all tests, or one by name")
+    run_parser.add_argument("name", nargs="?", default=None, help="Run only the test with this name")
+    run_parser.set_defaults(func=_test_run)
+
+    list_parser = test_subparsers.add_parser("list", help="List all stored tests with their last result")
+    list_parser.set_defaults(func=_test_list)
 
     args = parser.parse_args(argv)
     return int(args.func(args))

@@ -50,11 +50,37 @@ CREATE TABLE IF NOT EXISTS snapshots (
     metadata TEXT NOT NULL DEFAULT '{}'
 );
 
+CREATE TABLE IF NOT EXISTS tests (
+    test_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    source_run_id TEXT NOT NULL,
+    source_snapshot_id TEXT,
+    assertions TEXT NOT NULL DEFAULT '[]',
+    created_at REAL NOT NULL,
+    last_run_at REAL,
+    last_result TEXT
+);
+
+CREATE TABLE IF NOT EXISTS test_results (
+    result_id TEXT PRIMARY KEY,
+    test_id TEXT NOT NULL,
+    replay_run_id TEXT,
+    status TEXT NOT NULL,
+    passed INTEGER NOT NULL,
+    assertion_results TEXT NOT NULL DEFAULT '[]',
+    duration_ms REAL,
+    token_usage TEXT,
+    error_reason TEXT,
+    created_at REAL NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_runs_run_id ON runs (run_id);
 CREATE INDEX IF NOT EXISTS idx_events_run_id ON events (run_id);
 CREATE INDEX IF NOT EXISTS idx_events_event_type ON events (event_type);
 CREATE INDEX IF NOT EXISTS idx_snapshots_run_id ON snapshots (run_id);
 CREATE INDEX IF NOT EXISTS idx_snapshots_step_index ON snapshots (step_index);
+CREATE INDEX IF NOT EXISTS idx_tests_created_at ON tests (created_at);
+CREATE INDEX IF NOT EXISTS idx_test_results_test_id ON test_results (test_id);
 """
 
 
@@ -244,6 +270,97 @@ class Database:
         await self._conn.commit()
         return True
 
+    async def create_test(
+        self,
+        test_id: str,
+        name: str,
+        source_run_id: str,
+        source_snapshot_id: str | None,
+        assertions: list[dict[str, Any]],
+        created_at: float,
+    ) -> None:
+        await self._conn.execute(
+            "INSERT INTO tests (test_id, name, source_run_id, source_snapshot_id, assertions, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (test_id, name, source_run_id, source_snapshot_id, json.dumps(assertions), created_at),
+        )
+        await self._conn.commit()
+
+    async def list_tests(self) -> list[dict[str, Any]]:
+        cursor = await self._conn.execute(
+            "SELECT test_id, name, source_run_id, source_snapshot_id, assertions, "
+            "created_at, last_run_at, last_result FROM tests ORDER BY created_at DESC"
+        )
+        rows = await cursor.fetchall()
+        return [_row_to_test(row) for row in rows]
+
+    async def get_test(self, test_id: str) -> dict[str, Any] | None:
+        cursor = await self._conn.execute(
+            "SELECT test_id, name, source_run_id, source_snapshot_id, assertions, "
+            "created_at, last_run_at, last_result FROM tests WHERE test_id = ?",
+            (test_id,),
+        )
+        row = await cursor.fetchone()
+        return _row_to_test(row) if row else None
+
+    async def delete_test(self, test_id: str) -> bool:
+        test = await self.get_test(test_id)
+        if test is None:
+            return False
+        await self._conn.execute("DELETE FROM test_results WHERE test_id = ?", (test_id,))
+        await self._conn.execute("DELETE FROM tests WHERE test_id = ?", (test_id,))
+        await self._conn.commit()
+        return True
+
+    async def update_test_last_result(self, test_id: str, last_result: str, last_run_at: float) -> None:
+        await self._conn.execute(
+            "UPDATE tests SET last_result = ?, last_run_at = ? WHERE test_id = ?",
+            (last_result, last_run_at, test_id),
+        )
+        await self._conn.commit()
+
+    async def insert_test_result(
+        self,
+        result_id: str,
+        test_id: str,
+        replay_run_id: str | None,
+        status: str,
+        passed: bool,
+        assertion_results: list[dict[str, Any]],
+        duration_ms: float | None,
+        token_usage: dict[str, Any] | None,
+        error_reason: str | None,
+        created_at: float,
+    ) -> None:
+        await self._conn.execute(
+            "INSERT INTO test_results (result_id, test_id, replay_run_id, status, passed, "
+            "assertion_results, duration_ms, token_usage, error_reason, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                result_id,
+                test_id,
+                replay_run_id,
+                status,
+                1 if passed else 0,
+                json.dumps(assertion_results),
+                duration_ms,
+                json.dumps(token_usage) if token_usage is not None else None,
+                error_reason,
+                created_at,
+            ),
+        )
+        await self._conn.commit()
+
+    async def list_test_results(self, test_id: str, limit: int = 20) -> list[dict[str, Any]]:
+        cursor = await self._conn.execute(
+            "SELECT result_id, test_id, replay_run_id, status, passed, assertion_results, "
+            "duration_ms, token_usage, error_reason, created_at FROM test_results "
+            "WHERE test_id = ? ORDER BY created_at DESC LIMIT ?",
+            (test_id, limit),
+        )
+        rows = await cursor.fetchall()
+        return [_row_to_test_result(row) for row in rows]
+
 
 def _row_to_run(row: aiosqlite.Row) -> dict[str, Any]:
     return {
@@ -296,4 +413,32 @@ def _row_to_snapshot(row: aiosqlite.Row) -> dict[str, Any]:
         "messages": json.loads(row["messages"]),
         "tool_results": json.loads(row["tool_results"]),
         "metadata": json.loads(row["metadata"]),
+    }
+
+
+def _row_to_test(row: aiosqlite.Row) -> dict[str, Any]:
+    return {
+        "test_id": row["test_id"],
+        "name": row["name"],
+        "source_run_id": row["source_run_id"],
+        "source_snapshot_id": row["source_snapshot_id"],
+        "assertions": json.loads(row["assertions"]),
+        "created_at": row["created_at"],
+        "last_run_at": row["last_run_at"],
+        "last_result": row["last_result"],
+    }
+
+
+def _row_to_test_result(row: aiosqlite.Row) -> dict[str, Any]:
+    return {
+        "result_id": row["result_id"],
+        "test_id": row["test_id"],
+        "replay_run_id": row["replay_run_id"],
+        "status": row["status"],
+        "passed": bool(row["passed"]),
+        "assertion_results": json.loads(row["assertion_results"]),
+        "duration_ms": row["duration_ms"],
+        "token_usage": json.loads(row["token_usage"]) if row["token_usage"] else None,
+        "error_reason": row["error_reason"],
+        "created_at": row["created_at"],
     }
