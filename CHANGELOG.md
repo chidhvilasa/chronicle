@@ -6,6 +6,50 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-04
+
+### Added
+
+- `chronicle-sdk`: `chronicle.testing.models.ChronicleTest` and
+  `ChronicleAssertion` — a test replays `source_run_id` from
+  `source_snapshot_id` (defaulting to step 0) and checks the result
+  against a list of assertions (`output_contains`/`output_not_contains`/
+  `output_matches_regex`/`tool_called`/`tool_not_called`/
+  `token_count_under`/`latency_under_ms`/`no_errors`, plus a `custom`
+  type that always passes and just records that it ran), each scopeable
+  to one `agent_name` and configurable to `on_fail: "fail"` or `"warn"`.
+- `chronicle-sdk`: `chronicle.testing.runner.ChronicleTestRunner` — calls
+  `POST /replay`, polls up to 5 minutes for the replay run to finish
+  (returning `status: "error"`, reason `"replay timeout after 300s"` if it
+  doesn't), evaluates every assertion via the pure `evaluate_assertion()`,
+  and returns a `TestResult`. `run_suite()` runs a list of tests
+  sequentially and aggregates pass/fail/error counts.
+- `chronicle-sdk`: a pytest plugin (`chronicle.testing.pytest_plugin`,
+  registered as a `pytest11` entry point) exposing the `chronicle_test`
+  fixture — `chronicle_test.run("test name")` looks up a stored test by
+  name and runs it, so regression tests can gate CI the same way any other
+  pytest test does.
+- `chronicle-sdk`: `chronicle test run [NAME]` and `chronicle test list`
+  CLI commands. `chronicle test run` (no args) runs every stored test and
+  exits `0` only if all of them pass, `1` otherwise — wired for CI.
+- `chronicle-server`: `tests`/`test_results` SQLite tables and
+  `POST/GET/DELETE /tests`, `GET /tests/{id}/history`, and
+  `POST /tests/{id}/run` (awaits the replay to completion server-side and
+  evaluates assertions in the same request, so the desktop app's "Run"
+  button can show a spinner until a real result comes back). Every
+  test-triggered replay run is stamped with
+  `{triggered_by: "test", test_id}` in its metadata and never touches the
+  source run.
+- `chronicle-app`: a fourth top-nav tab, **Tests**. `TestList.tsx` polls
+  `GET /tests` every 5s and shows a PASS/FAIL/ERROR/NEVER RUN badge, a Run
+  button, and a delete confirmation per test. Every run card in
+  `RunList.tsx` gained a "Create Test" button opening
+  `CreateTestModal.tsx` (name, source run, snapshot picker, an assertions
+  builder covering all assertion types). Clicking a test opens
+  `TestResult.tsx`: a 10-run pass/fail/error history bar, the most recent
+  result's per-assertion pass/fail and reason, a link to the replay run it
+  created, and a "Run again" button.
+
 ## [0.3.0] - 2026-07-03
 
 ### Added

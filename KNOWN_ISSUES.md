@@ -1,7 +1,24 @@
 # Known Issues
 
-## v0.3.0 scope
+## v0.4.0 scope
 
+- **`custom` assertion type always passes, no evaluation implemented**:
+  `chronicle.testing.runner.evaluate_assertion()` treats
+  `assertion_type: "custom"` as an always-passing no-op — it records that
+  the assertion ran (`reason: "custom assertion recorded (no automatic
+  evaluation implemented yet)"`) but never inspects `target` or the
+  replay's events. Custom assertion logic is not extensible yet; use one
+  of the other 8 assertion types for anything that needs real evaluation.
+- **Async PydanticAI runs not supported (carried from v0.3.0)**:
+  `chronicle.adapters.pydanticai.ChronicleMiddleware` still only
+  instruments `run_sync()` — a PydanticAI agent driven through
+  `await agent.run(...)` won't produce Chronicle events, so regression
+  tests sourced from a PydanticAI run only capture synchronous calls.
+- **Test runner is sequential, parallel runs coming in v0.5.0**:
+  `ChronicleTestRunner.run_suite()` and `chronicle test run` (no test name)
+  replay and evaluate every test one at a time. A suite with many tests,
+  or tests whose replays are slow, takes proportionally longer — there's
+  no concurrency yet.
 - **Auto server startup requires `uvicorn` in the same Python environment**:
   `chronicle.instrument()`/`ServerManager.ensure_running()` spawns `python
   -m uvicorn src.main:app`, which only works if `chronicle-server` (and its
