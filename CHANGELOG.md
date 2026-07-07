@@ -6,6 +6,54 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-07
+
+### Added
+
+- `chronicle-server`: a `run_metrics` table (`server/src/database.py`)
+  aggregating each run's events into `total_duration_ms`,
+  `total_input_tokens`/`total_output_tokens`/`total_tokens`,
+  `estimated_cost_usd`, `llm_call_count`/`tool_call_count`,
+  `error_count`/`retry_count`, `avg_llm_latency_ms`/`p95_llm_latency_ms`,
+  `avg_tool_latency_ms`/`p95_tool_latency_ms`, `framework`, and
+  `agent_count`. `Database.compute_run_metrics(run_id)` computes and
+  upserts one row from a run's events; it runs automatically once a run
+  reaches `"complete"` status (today, only the replay engine's
+  completion path actually reaches that status - see
+  `KNOWN_ISSUES.md`), scheduled as a background task off `POST /events`
+  so ingestion is never blocked on metric computation. Cost estimates
+  use configurable `GPT4_INPUT_COST_PER_TOKEN`/`GPT4_OUTPUT_COST_PER_TOKEN`
+  and `DEFAULT_INPUT_COST_PER_TOKEN`/`DEFAULT_OUTPUT_COST_PER_TOKEN`
+  constants, keyed off the `model` name captured in `llm_call` events.
+- `chronicle-server`: `GET /metrics/overview` (totals across every run
+  with metrics, plus a trailing-7-day slice), `GET /metrics/runs`
+  (paginated `run_metrics` rows, filterable by date range/framework/
+  status), `GET /metrics/trends` (day/week/month-bucketed tokens/cost/
+  latency/errors, with an additional `stat=avg|p95` option for the
+  latency metric), `GET /metrics/tools` (call count/latency/error rate/
+  tokens per tool, aggregated across every run), and `GET /metrics/models`
+  (the same, per captured model name). Every response that includes a
+  cost figure carries `cost_is_estimate: true`.
+- `chronicle-server`: `POST /metrics/backfill` computes `run_metrics` for
+  every pre-existing complete run that doesn't have a row yet, returning
+  the count backfilled. Rate-limited to one concurrent backfill (409 if
+  one is already running).
+- `chronicle-app`: a fifth top-nav tab, **Performance**
+  (`app/src/components/Performance/`). Six overview stat cards (total
+  runs, total tokens, total cost, avg run duration, total errors, runs
+  this week with a trend arrow vs. the prior week) poll
+  `GET /metrics/overview` every 30s, with skeleton loading and a retry
+  button on failure. A token/cost trend chart and an LLM latency
+  (avg + p95) trend chart share one 7D/30D/90D range selector; chart
+  option objects are memoized so an unchanged poll doesn't re-render
+  them. A sortable tools table highlights error rates above 5% in red
+  and, when a tool name is clicked, filters the run list sidebar to runs
+  that used it (new `toolNameFilter` field in `useAppStore`). A run
+  cost-vs-duration scatter chart (sized by token count, colored by
+  error/no-error) selects a run in the sidebar when clicked. A model
+  breakdown table falls back to an upgrade notice when no real model
+  name was captured.
+
 ## [0.4.0] - 2026-07-04
 
 ### Added

@@ -1,5 +1,51 @@
 # Known Issues
 
+## v0.5.0 scope
+
+- **Cost estimates use fixed token prices, not model-specific pricing**:
+  `run_metrics.estimated_cost_usd` and the `/metrics/*` endpoints price
+  tokens using flat `GPT4_INPUT_COST_PER_TOKEN`/`GPT4_OUTPUT_COST_PER_TOKEN`
+  (only applied when the captured model name contains `"gpt-4"`) and
+  `DEFAULT_INPUT_COST_PER_TOKEN`/`DEFAULT_OUTPUT_COST_PER_TOKEN` otherwise
+  (`server/src/database.py`) — not real, current per-model billing rates.
+  Every response carrying a cost figure marks it `cost_is_estimate: true`
+  for exactly this reason; treat it as a ballpark, not a bill.
+- **Model names are only captured if the LLM client passes them through
+  the framework callback**: `GET /metrics/models` and the per-model cost
+  split in `run_metrics` group by `data["model"]` on `llm_call` events,
+  which the LangGraph adapter populates from `serialized.get("name")` —
+  some providers/model versions don't populate that field, so they show
+  up as `"unknown"` rather than a real model name. The Performance
+  Dashboard's model breakdown table shows an upgrade notice instead of a
+  table when every captured name is `"unknown"`.
+- **`run_metrics` only populates for runs that reach `"complete"` status,
+  and today only the replay engine ever sets that status**: `chronicle-sdk`
+  still has no explicit "run finished" signal (carried from earlier
+  phases - see the "SDK / server" section below), so a live agent run's
+  status stays `"running"`/`"error"` forever and never gets a
+  `run_metrics` row on its own. `POST /events` does schedule a background
+  metrics computation whenever it observes a run already marked
+  `"complete"`, for forward compatibility, but that path is not
+  reachable yet under the current status model.
+- **Backfill is synchronous and may be slow on databases with 500+ runs**:
+  `POST /metrics/backfill` (`Database.backfill_run_metrics`) reads every
+  complete run's full event list in a single request/response cycle, with
+  no batching or progress reporting. It's rate-limited to one concurrent
+  backfill (a second call gets `409` while one is running), but a large
+  database can still make that one call take a while.
+- **Trend chart ranges are computed client-side, not server-truncated**:
+  `GET /metrics/trends` always buckets and returns every `run_metrics`
+  row's history; the Performance Dashboard's 7D/30D/90D selector slices
+  the most recent N buckets out of that response client-side
+  (`TokenCostTrendChart.tsx`/`LatencyTrendChart.tsx`) rather than the
+  server limiting the range. Fine at current data volumes; a
+  long-running deployment with years of history sends more trend data
+  over the wire than a given range selection needs.
+- **Async PydanticAI runs not supported (carried from v0.3.0)**: see the
+  v0.4.0 entry below - still unaddressed in v0.5.0.
+- **`custom` assertion type always passes (carried from v0.4.0)**: see the
+  v0.4.0 entry below - still unaddressed in v0.5.0.
+
 ## v0.4.0 scope
 
 - **`custom` assertion type always passes, no evaluation implemented**:
