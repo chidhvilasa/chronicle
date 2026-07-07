@@ -6,6 +6,48 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-08
+
+### Added
+
+- `chronicle-server`: `server/src/prompts.py` (prompt extraction from
+  `llm_call` events, split into a cheap summary list and a lazily-fetched
+  full-content detail so `GET /runs/{id}/prompts` never loads full message
+  content for runs with hundreds of events) and `server/src/prompt_diff.py`
+  (a `difflib.SequenceMatcher` character-level diff, rendered as
+  `html.escape()`d `<span class="add"|"del"|"same">` HTML). Added
+  `GET /runs/{id}/prompts`, `GET /runs/{id}/prompts/{event_id}`, and
+  `GET /prompts/diff`.
+- `chronicle-server`: `server/src/memory_builder.py` diffs a
+  `memory_update` event's before/after dicts into added/removed/changed
+  top-level keys (a nested change surfaces as its enclosing top-level key
+  changing, since Python's `!=` on dicts is already a deep comparison).
+  Added `GET /runs/{id}/memory`.
+- `chronicle-sdk`: `chronicle.memory_diff.record_memory_update()`, used by
+  all five adapters' new `memory_update` capture - LangGraph via
+  `on_chain_start`/`on_chain_end`, the rest via an optional `state`/`memory`
+  hook keyword argument.
+- `chronicle-app`: a Prompts tab and a Memory tab on the right-side
+  Inspector panel (Event/Agent/Tools/Prompts/Memory) - a prompt step list
+  with role-colored message bubbles and a cross-run "Compare with another
+  prompt" diff view, and a memory timeline with an added/removed/changed
+  key diff view.
+- `chronicle-sdk`: `chronicle.adapters.semantickernel.ChronicleKernelPlugin`
+  - `pre/post_invocation_hook` map onto `tool_call`
+    (`function_start`/`function_end`); `pre/post_chat_hook` map onto
+    `llm_call` (`llm_call`/`llm_result`). `chronicle.instrument()` now
+    detects `semantic_kernel.Kernel`.
+- `chronicle-sdk`: `chronicle.chaos.ChaosConfig` and `ChaosMixin` for
+  synthetic tool-call failure/latency/malformed-response injection, wired
+  into `LangGraphAdapter`. `chronicle.chaos()` is a convenience factory
+  (20% tool failure rate by default). Strictly opt-in via
+  `chronicle.instrument(graph, chaos=...)`; never applied to LLM calls.
+- `chronicle-sdk`/`chronicle-server`: `ChronicleTracer.set_metadata()` and
+  `POST /runs/{id}/metadata`, so a chaos-enabled run can be stamped
+  `{chaos_mode: true, chaos_config: {...}}` before any events arrive.
+- `chronicle-app`: a red **CHAOS** badge in the run list for chaos-mode
+  runs, next to the existing REPLAY badge.
+
 ## [0.6.0] - 2026-07-07
 
 ### Added

@@ -1,5 +1,46 @@
 # Known Issues
 
+## v0.7.0 scope
+
+- **Memory tracking requires agents to emit `memory_update` events.
+  Automatic memory tracking is framework-dependent**: `chronicle.memory_diff`
+  only produces an event when an adapter actually observes a `state`/
+  `memory` dict. LangGraph gets this for free (`on_chain_start`/
+  `on_chain_end` see the whole graph state); the OpenAI Agents SDK,
+  PydanticAI, CrewAI, and AutoGen adapters only capture it if the real
+  framework happens to pass a `state`/`memory` keyword argument into the
+  hook/call chronicle-sdk is watching - which isn't guaranteed by any of
+  those frameworks' actual APIs today. A run with no memory instrumentation
+  simply shows "No memory updates recorded for this run" rather than an
+  error.
+- **Chaos testing only supported on the LangGraph adapter in v0.7.0.
+  CrewAI/AutoGen/PydanticAI chaos support coming in v0.8.0**:
+  `ChaosMixin` itself is adapter-agnostic, but only
+  `chronicle.adapters.langgraph.LangGraphAdapter` is wired to call it.
+  Passing `chaos=` to `chronicle.instrument()` for any other framework
+  prints a warning and has no effect.
+- **Chaos malformed-response injection only rewrites what Chronicle
+  records, not what the agent actually receives**: `LangGraphAdapter` is a
+  passive callback observer - it can see a tool call start and end, but it
+  can't rewrite the tool's actual return value back to the calling agent.
+  Tool failure and latency injection are both genuinely enforced (raised/
+  slept before the real tool call proceeds); a triggered "malformed
+  response" only changes the `tool_call` event's recorded `result`, so the
+  agent's real behavior is unaffected even though Chronicle's timeline
+  shows the malformed value.
+- **Semantic Kernel adapter tested against duck-typed interfaces, not
+  validated against the real library**: `chronicle-sdk` has no dependency
+  on `semantic-kernel` (by design), and every
+  `test_semantickernel_adapter.py` test uses a plain mock. If a real
+  installed version's hook signatures differ from what
+  `ChronicleKernelPlugin` expects, events may not record as documented
+  until that's confirmed against a live integration (the same caveat as
+  the CrewAI/AutoGen adapters from v0.6.0).
+- **`custom` assertion type always passes (carried from v0.4.0)**:
+  unaddressed in v0.7.0; see the v0.4.0 entry below.
+- **Async PydanticAI runs not supported (carried from v0.3.0)**:
+  unaddressed in v0.7.0; see the v0.4.0 entry below.
+
 ## v0.6.0 scope
 
 - **AutoGen async agent patterns not yet supported**:

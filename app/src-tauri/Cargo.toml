@@ -1,6 +1,6 @@
 [package]
 name = "chronicle"
-version = "0.6.0"
+version = "0.7.0"
 description = "Chronicle desktop app: the Chrome DevTools for AI agents"
 authors = ["chidhvilasa"]
 edition = "2021"
