@@ -1113,6 +1113,119 @@
   }
 }
 
+/* --- Execution graph ------------------------------------------------------ */
+
+.execution-graph-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.graph-cycle-banner {
+  padding: 0.5rem 0.9rem;
+  background-color: #fef3c7;
+  color: #92400e;
+  font-size: 0.85rem;
+  border-bottom: 1px solid #fcd34d;
+}
+
+.graph-cycle-banner a {
+  color: #92400e;
+  font-weight: 600;
+}
+
+.graph-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.graph-toolbar {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.graph-toolbar button {
+  padding: 0.3rem 0.6rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.graph-toggle.active {
+  background-color: #4285f4;
+  border-color: #4285f4;
+  color: #fff;
+}
+
+.graph-canvas-wrapper {
+  flex: 1;
+  min-height: 0;
+}
+
+.graph-node {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.75rem;
+  background-color: #fff;
+  border: 2px solid #999;
+  min-width: 80px;
+  text-align: center;
+}
+
+.graph-node-agent {
+  border-radius: 10px;
+  border-color: #4285f4;
+}
+
+.graph-node-tool {
+  border-color: #f59e0b;
+  clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+  padding: 0.6rem 1.4rem;
+}
+
+.graph-node-llm {
+  border-color: #a855f7;
+  border-radius: 50%;
+  width: 90px;
+  height: 90px;
+}
+
+.graph-node-io {
+  border-color: #9ca3af;
+  border-radius: 2px;
+}
+
+.graph-node-status-error {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 1px #ef4444;
+}
+
+.graph-node-dimmed {
+  opacity: 0.25;
+}
+
+.graph-node-label {
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.graph-node-count {
+  font-size: 0.65rem;
+  color: #666;
+  background-color: #f0f0f0;
+  border-radius: 8px;
+  padding: 0 0.3rem;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     color: #f6f6f6;
@@ -1256,5 +1369,34 @@
 
   .run-list-filter-chip button {
     color: #f6f6f6;
+  }
+
+  .graph-cycle-banner {
+    background-color: #451a03;
+    color: #fde68a;
+    border-color: #92400e;
+  }
+
+  .graph-cycle-banner a {
+    color: #fde68a;
+  }
+
+  .graph-toolbar {
+    border-color: #4a4a4a;
+  }
+
+  .graph-toolbar button {
+    border-color: #4a4a4a;
+    color: #f6f6f6;
+  }
+
+  .graph-node {
+    background-color: #2a2a2a;
+    color: #f6f6f6;
+  }
+
+  .graph-node-count {
+    background-color: #3a3a3a;
+    color: #ccc;
   }
 }

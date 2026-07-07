@@ -239,3 +239,45 @@ export interface ModelMetrics {
 export interface BackfillResult {
   backfilled_count: number;
 }
+
+// Mirrors server/src/models.py's GraphNodeOut/GraphEdgeOut/GraphMetadataOut/GraphOut
+// (`GET /runs/{id}/graph`, Phase 22), built by server/src/graph_builder.py.
+
+export type GraphNodeType = "agent" | "tool" | "llm" | "input" | "output";
+export type GraphEdgeType = "calls" | "responds" | "handoff" | "triggers";
+export type GraphNodeStatus = "ok" | "error" | "warning";
+
+export interface GraphNode {
+  id: string;
+  type: GraphNodeType;
+  label: string;
+  agent_name: string | null;
+  event_count: number;
+  error_count: number;
+  total_tokens: number;
+  avg_latency_ms: number | null;
+  status: GraphNodeStatus;
+}
+
+export interface GraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  label: string;
+  edge_type: GraphEdgeType;
+  event_count: number;
+}
+
+export interface GraphMetadata {
+  total_nodes: number;
+  total_edges: number;
+  has_cycles: boolean;
+  max_depth: number;
+}
+
+export interface ExecutionGraph {
+  run_id: string;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  metadata: GraphMetadata;
+}

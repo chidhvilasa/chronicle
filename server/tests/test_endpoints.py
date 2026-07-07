@@ -110,6 +110,24 @@ def test_get_run_timeline_404(client):
     assert response.status_code == 404
 
 
+def test_get_run_graph(client):
+    client.post("/events", json=[_event()])
+    response = client.get("/runs/run-1/graph")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["run_id"] == "run-1"
+    node_ids = {n["id"] for n in body["nodes"]}
+    assert "agent:agent-a" in node_ids
+    assert "tool:search" in node_ids
+    assert body["metadata"]["total_nodes"] == len(body["nodes"])
+    assert body["metadata"]["total_edges"] == len(body["edges"])
+
+
+def test_get_run_graph_404(client):
+    response = client.get("/runs/missing/graph")
+    assert response.status_code == 404
+
+
 def test_delete_run(client):
     client.post("/events", json=[_event()])
 

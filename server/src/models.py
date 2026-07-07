@@ -232,6 +232,45 @@ class BackfillResponse(BaseModel):
     backfilled_count: int
 
 
+class GraphNodeOut(BaseModel):
+    """One node in a run's execution graph, from `GET /runs/{id}/graph`."""
+
+    id: str
+    type: Literal["agent", "tool", "llm", "input", "output"]
+    label: str
+    agent_name: str | None
+    event_count: int
+    error_count: int
+    total_tokens: int
+    avg_latency_ms: float | None
+    status: Literal["ok", "error", "warning"]
+
+
+class GraphEdgeOut(BaseModel):
+    """One edge in a run's execution graph, from `GET /runs/{id}/graph`."""
+
+    id: str
+    source: str
+    target: str
+    label: str
+    edge_type: Literal["calls", "responds", "handoff", "triggers"]
+    event_count: int
+
+
+class GraphMetadataOut(BaseModel):
+    total_nodes: int
+    total_edges: int
+    has_cycles: bool
+    max_depth: int
+
+
+class GraphOut(BaseModel):
+    run_id: str
+    nodes: list[GraphNodeOut]
+    edges: list[GraphEdgeOut]
+    metadata: GraphMetadataOut
+
+
 AssertionTypeLiteral = Literal[
     "output_contains",
     "output_not_contains",

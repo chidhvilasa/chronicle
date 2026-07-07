@@ -18,10 +18,12 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from src import __version__
 from src.database import DEFAULT_DB_PATH, Database
+from src.graph_builder import build_graph
 from src.models import (
     BackfillResponse,
     EventIn,
     EventOut,
+    GraphOut,
     HealthOut,
     MetricsOverviewOut,
     ModelMetricsOut,
@@ -222,6 +224,16 @@ async def get_run_timeline(run_id: str) -> TimelineOut:
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' was not found")
     events = await app.state.db.list_events(run_id)
     return TimelineOut(run_id=run_id, lanes=build_timeline(events))
+
+
+@app.get("/runs/{run_id}/graph", response_model=GraphOut)
+async def get_run_graph(run_id: str) -> GraphOut:
+    run = await app.state.db.get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' was not found")
+    events = await app.state.db.list_events(run_id)
+    graph = build_graph(events)
+    return GraphOut(run_id=run_id, nodes=graph["nodes"], edges=graph["edges"], metadata=graph["metadata"])
 
 
 @app.delete("/runs/{run_id}", status_code=204)

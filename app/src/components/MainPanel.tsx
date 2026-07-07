@@ -1,5 +1,6 @@
 import { useAppStore } from "../store/useAppStore";
 import { Diff } from "./Diff";
+import { ExecutionGraph } from "./Graph";
 import { PerformanceDashboard } from "./Performance";
 import { Timeline } from "./Timeline";
 import { Tests } from "./Tests/Tests";
@@ -21,6 +22,7 @@ export function MainPanel() {
       {activePanel === "diff" && <Diff />}
       {activePanel === "tests" && <Tests />}
       {activePanel === "performance" && <PerformanceDashboard />}
+      {activePanel === "graph" && <ExecutionGraph runId={selectedRunId} />}
     </main>
   );
 }

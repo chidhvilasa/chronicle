@@ -9,6 +9,7 @@ const PANELS: { id: PanelId; label: string }[] = [
   { id: "diff", label: "Diff" },
   { id: "tests", label: "Tests" },
   { id: "performance", label: "Performance" },
+  { id: "graph", label: "Graph" },
 ];
 
 /** Top navigation bar: brand, panel switcher tabs, settings icon, connection status. */

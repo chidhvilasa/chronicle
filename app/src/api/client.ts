@@ -4,6 +4,7 @@ import type {
   ChronicleAssertion,
   ChronicleTest,
   Event,
+  ExecutionGraph,
   HealthStatus,
   MetricsOverview,
   ModelMetrics,
@@ -84,6 +85,7 @@ export const chronicleApi = {
   listRuns: (): Promise<Run[]> => request("/runs"),
   listRunEvents: (runId: string): Promise<Event[]> => request(`/runs/${runId}/events`),
   getRunTimeline: (runId: string): Promise<Timeline> => request(`/runs/${runId}/timeline`),
+  getRunGraph: (runId: string): Promise<ExecutionGraph> => request(`/runs/${runId}/graph`),
   deleteRun: (runId: string): Promise<void> => request(`/runs/${runId}`, { method: "DELETE" }),
   checkHealth: (): Promise<HealthStatus> => request("/health"),
   listRunSnapshots: (runId: string): Promise<SnapshotSummary[]> =>

@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { DetailItem, Run } from "../types";
 
-export type PanelId = "timeline" | "inspector" | "diff" | "tests" | "performance";
+export type PanelId = "timeline" | "inspector" | "diff" | "tests" | "performance" | "graph";
 
 export type InspectorTab = "event" | "agent" | "tools";
 
