@@ -6,6 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-07
+
+### Added
+
+- `chronicle-sdk`: `chronicle.adapters.crewai.ChronicleCrewAICallbackHandler`,
+  a CrewAI callback handler covering the full crew/agent/task/tool
+  lifecycle (`on_crew_start/end`, `on_agent_start/end`, `on_task_start/end`,
+  `on_tool_start/end/error`).
+- `chronicle-sdk`: `chronicle.adapters.autogen.ChronicleAutoGenHook`, an
+  AutoGen `ConversableAgent` wrapper covering `initiate_chat`
+  (conversation start/end), `receive` (per-message), and
+  `execute_function` (tool call/result).
+- `chronicle-sdk`: `chronicle.instrument()` auto-detection extended to
+  recognize `crewai.Crew` and any `autogen`-rooted `*Agent` class.
+  Neither `crewai` nor `pyautogen` are hard dependencies.
+- `chronicle-server`: `GET /runs/{run_id}/graph`, backed by
+  `server/src/graph_builder.py` — builds a run's execution graph
+  (agent/tool/llm nodes, calls/responds/handoff/triggers edges,
+  duplicate-edge merging, cycle detection, max-depth) from its raw
+  events.
+- `chronicle-app`: a sixth top-nav tab, **Execution Graph**
+  (`app/src/components/Graph/`), rendering the graph with React Flow —
+  shaped/colored nodes by type, edge styling by type, a client-side
+  layered layout, node-click navigation into the Inspector tab, a
+  cycle-detection warning banner, and fit/toggle-labels/highlight-errors/
+  export-as-PNG controls.
+
 ## [0.5.0] - 2026-07-07
 
 ### Added

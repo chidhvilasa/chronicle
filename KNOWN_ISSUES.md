@@ -1,5 +1,44 @@
 # Known Issues
 
+## v0.6.0 scope
+
+- **AutoGen async agent patterns not yet supported**:
+  `chronicle.adapters.autogen.ChronicleAutoGenHook` instruments the
+  synchronous `initiate_chat`/`receive`/`execute_function` methods only.
+  An agent driven through AutoGen's async equivalents
+  (`a_initiate_chat`/`a_receive`/`a_execute_function`) won't produce any
+  Chronicle events yet — the same category of gap as PydanticAI's async
+  `run()` (below).
+- **CrewAI and AutoGen adapters are built against plausible, duck-typed
+  hook interfaces, not verified against the real libraries**: neither
+  `crewai` nor `pyautogen` is a Chronicle dependency (by design - see
+  `server/src/replay.py`'s precedent of treating framework SDKs as
+  optional), and every adapter test uses a plain mock object. If a real
+  installed version's callback signatures differ from what
+  `ChronicleCrewAICallbackHandler`/`ChronicleAutoGenHook` expect, events
+  may not record as documented until that's confirmed against a live
+  integration.
+- **Graph export PNG may be blank on Linux with some GPU configurations**:
+  `GraphControls.tsx`'s PNG export renders the React Flow viewport via
+  `html-to-image`, which depends on the browser's canvas/WebGL rendering
+  path. Some Linux GPU driver/Chromium combinations are known to produce
+  blank canvas exports for DOM-to-image libraries in general; unaffected
+  on Windows/macOS in testing so far.
+- **Execution graph layout is a simple custom layered algorithm, not a
+  real graph-layout library**: `app/src/components/Graph/layout.ts`
+  places nodes in columns by BFS distance from the run's `input` node and
+  stacks same-column nodes vertically - no edge-crossing minimization, so
+  a graph with many cross-cutting handoffs can look tangled. Good enough
+  for the current node-count constraints (~50 nodes); a real layout
+  library (e.g. dagre/elkjs) is future work if graphs grow more complex.
+- **Semantic Kernel adapter coming in v0.7.0**: not yet supported: use
+  `ChronicleTracer.record_event()` directly to instrument Semantic
+  Kernel agents in the meantime.
+- **`custom` assertion type always passes (carried from v0.4.0)**:
+  unaddressed in v0.6.0; see the v0.4.0 entry below.
+- **Async PydanticAI runs not supported (carried from v0.3.0)**:
+  unaddressed in v0.6.0; see the v0.4.0 entry below.
+
 ## v0.5.0 scope
 
 - **Cost estimates use fixed token prices, not model-specific pricing**:

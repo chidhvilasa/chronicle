@@ -17,7 +17,7 @@ from chronicle.models import ChronicleEvent, EventType, StateSnapshot, TokenUsag
 from chronicle.server_manager import ServerManager
 from chronicle.tracer import ChronicleTracer
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 __all__ = [
     "ChronicleTracer",
