@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { chronicleApi, ChronicleApiError } from "../api/client";
 import { RUN_LIST_POLL_INTERVAL_MS } from "../config";
 import { useAppStore } from "../store/useAppStore";
-import { getReplayMetadata, type Run } from "../types";
+import { getReplayMetadata, type Event, type Run } from "../types";
 import { CreateTestModal } from "./Tests/CreateTestModal";
 
 function formatRelativeTime(unixSeconds: number): string {
@@ -90,7 +90,46 @@ export function RunList() {
   const setLoading = useAppStore((state) => state.setLoading);
   const setError = useAppStore((state) => state.setError);
   const selectRun = useAppStore((state) => state.selectRun);
+  const toolNameFilter = useAppStore((state) => state.toolNameFilter);
+  const setToolNameFilter = useAppStore((state) => state.setToolNameFilter);
   const [createTestRunId, setCreateTestRunId] = useState<string | null>(null);
+  const [matchingRunIds, setMatchingRunIds] = useState<Set<string> | null>(null);
+
+  useEffect(() => {
+    if (toolNameFilter === null) {
+      setMatchingRunIds(null);
+      return;
+    }
+    let cancelled = false;
+
+    async function computeMatches() {
+      const perRunEvents = await Promise.all(
+        runs.map((run) =>
+          chronicleApi.listRunEvents(run.run_id).catch(() => [] as Event[])
+        )
+      );
+      if (cancelled) return;
+      const matches = new Set<string>();
+      runs.forEach((run, index) => {
+        const usedTool = perRunEvents[index].some(
+          (event) => event.event_type === "tool_call" && event.data["tool_name"] === toolNameFilter
+        );
+        if (usedTool) matches.add(run.run_id);
+      });
+      setMatchingRunIds(matches);
+    }
+
+    computeMatches();
+    return () => {
+      cancelled = true;
+    };
+    // Recomputed once per filter change; intentionally not re-run on every run-list poll.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toolNameFilter]);
+
+  const visibleRuns = toolNameFilter === null || matchingRunIds === null
+    ? runs
+    : runs.filter((run) => matchingRunIds.has(run.run_id));
 
   useEffect(() => {
     let cancelled = false;
@@ -144,17 +183,29 @@ export function RunList() {
 
   return (
     <aside className="run-list" data-testid="run-list">
-      <ul>
-        {runs.map((run) => (
-          <RunCard
-            key={run.run_id}
-            run={run}
-            isSelected={run.run_id === selectedRunId}
-            onSelect={() => selectRun(run.run_id)}
-            onCreateTest={() => setCreateTestRunId(run.run_id)}
-          />
-        ))}
-      </ul>
+      {toolNameFilter !== null && (
+        <div className="run-list-filter-chip" data-testid="run-list-filter-chip">
+          <span>Tool: {toolNameFilter}</span>
+          <button type="button" onClick={() => setToolNameFilter(null)} aria-label="Clear tool filter">
+            ✕
+          </button>
+        </div>
+      )}
+      {visibleRuns.length === 0 ? (
+        <p className="run-list-empty">No runs used this tool.</p>
+      ) : (
+        <ul>
+          {visibleRuns.map((run) => (
+            <RunCard
+              key={run.run_id}
+              run={run}
+              isSelected={run.run_id === selectedRunId}
+              onSelect={() => selectRun(run.run_id)}
+              onCreateTest={() => setCreateTestRunId(run.run_id)}
+            />
+          ))}
+        </ul>
+      )}
       {createTestRunId !== null && (
         <CreateTestModal sourceRunId={createTestRunId} onClose={() => setCreateTestRunId(null)} />
       )}

@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { DetailItem, Run } from "../types";
 
-export type PanelId = "timeline" | "inspector" | "diff" | "tests";
+export type PanelId = "timeline" | "inspector" | "diff" | "tests" | "performance";
 
 export type InspectorTab = "event" | "agent" | "tools";
 
@@ -28,6 +28,8 @@ interface AppState {
   selectedToolName: string | null;
   diffPrefill: DiffPrefill | null;
   toast: Toast | null;
+  /** Set by clicking a tool name in the Performance tab's tools table; narrows the run sidebar. */
+  toolNameFilter: string | null;
   setRuns: (runs: Run[]) => void;
   selectRun: (runId: string | null) => void;
   setLoading: (loading: boolean) => void;
@@ -43,6 +45,7 @@ interface AppState {
   setDiffPrefill: (prefill: DiffPrefill | null) => void;
   showToast: (toast: Toast) => void;
   dismissToast: () => void;
+  setToolNameFilter: (toolName: string | null) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -57,6 +60,7 @@ export const useAppStore = create<AppState>((set) => ({
   selectedToolName: null,
   diffPrefill: null,
   toast: null,
+  toolNameFilter: null,
   setRuns: (runs) => set({ runs }),
   selectRun: (runId) =>
     set({
@@ -75,4 +79,5 @@ export const useAppStore = create<AppState>((set) => ({
   setDiffPrefill: (diffPrefill) => set({ diffPrefill }),
   showToast: (toast) => set({ toast }),
   dismissToast: () => set({ toast: null }),
+  setToolNameFilter: (toolNameFilter) => set({ toolNameFilter }),
 }));

@@ -1,5 +1,6 @@
 import { useAppStore } from "../store/useAppStore";
 import { Diff } from "./Diff";
+import { PerformanceDashboard } from "./Performance";
 import { Timeline } from "./Timeline";
 import { Tests } from "./Tests/Tests";
 import { InspectorPanel } from "./panels/InspectorPanel";
@@ -19,6 +20,7 @@ export function MainPanel() {
       {activePanel === "inspector" && <InspectorPanel />}
       {activePanel === "diff" && <Diff />}
       {activePanel === "tests" && <Tests />}
+      {activePanel === "performance" && <PerformanceDashboard />}
     </main>
   );
 }

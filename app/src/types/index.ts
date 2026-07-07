@@ -170,3 +170,72 @@ export interface TestResult {
   error_reason: string | null;
   created_at: number;
 }
+
+// Mirrors server/src/models.py's MetricsOverviewOut/RunMetricsOut/TrendPointOut/
+// ToolMetricsOut/ModelMetricsOut (the `GET/POST /metrics/*` endpoints, Phase 18).
+
+export interface MetricsOverview {
+  total_runs: number;
+  total_tokens: number;
+  total_cost_usd: number;
+  avg_run_duration_ms: number;
+  total_errors: number;
+  runs_last_7_days: number;
+  tokens_last_7_days: number;
+  cost_last_7_days: number;
+  most_expensive_run_id: string | null;
+  slowest_run_id: string | null;
+  cost_is_estimate: true;
+}
+
+export interface RunMetrics {
+  run_id: string;
+  total_duration_ms: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_tokens: number;
+  estimated_cost_usd: number;
+  llm_call_count: number;
+  tool_call_count: number;
+  error_count: number;
+  retry_count: number;
+  avg_llm_latency_ms: number | null;
+  p95_llm_latency_ms: number | null;
+  avg_tool_latency_ms: number | null;
+  p95_tool_latency_ms: number | null;
+  framework: string | null;
+  agent_count: number;
+  created_at: number;
+  cost_is_estimate: true;
+}
+
+export type TrendPeriod = "day" | "week" | "month";
+export type TrendMetric = "tokens" | "cost" | "latency" | "errors";
+
+export interface TrendPoint {
+  bucket: string;
+  value: number;
+}
+
+export interface ToolMetrics {
+  tool_name: string;
+  call_count: number;
+  avg_latency_ms: number | null;
+  p95_latency_ms: number | null;
+  error_rate: number;
+  total_tokens: number;
+}
+
+export interface ModelMetrics {
+  model_name: string;
+  call_count: number;
+  avg_latency_ms: number | null;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_cost_usd: number;
+  cost_is_estimate: true;
+}
+
+export interface BackfillResult {
+  backfilled_count: number;
+}

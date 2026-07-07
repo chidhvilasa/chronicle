@@ -1,15 +1,23 @@
 import { FETCH_TIMEOUT_MS } from "../config";
 import type {
+  BackfillResult,
   ChronicleAssertion,
   ChronicleTest,
   Event,
   HealthStatus,
+  MetricsOverview,
+  ModelMetrics,
   ReplayResponse,
   Run,
+  RunMetrics,
   Snapshot,
   SnapshotSummary,
   TestResult,
   Timeline,
+  ToolMetrics,
+  TrendMetric,
+  TrendPeriod,
+  TrendPoint,
 } from "../types";
 
 const DEFAULT_SERVER_URL = "http://127.0.0.1:7823";
@@ -110,4 +118,28 @@ export const chronicleApi = {
   runTest: (testId: string): Promise<TestResult> =>
     request(`/tests/${testId}/run`, { method: "POST" }),
   getTestHistory: (testId: string): Promise<TestResult[]> => request(`/tests/${testId}/history`),
+  getMetricsOverview: (): Promise<MetricsOverview> => request("/metrics/overview"),
+  listMetricsRuns: (params?: {
+    limit?: number;
+    offset?: number;
+    fromDate?: string;
+    toDate?: string;
+    framework?: string;
+    status?: string;
+  }): Promise<RunMetrics[]> => {
+    const query = new URLSearchParams();
+    if (params?.limit !== undefined) query.set("limit", String(params.limit));
+    if (params?.offset !== undefined) query.set("offset", String(params.offset));
+    if (params?.fromDate !== undefined) query.set("from_date", params.fromDate);
+    if (params?.toDate !== undefined) query.set("to_date", params.toDate);
+    if (params?.framework !== undefined) query.set("framework", params.framework);
+    if (params?.status !== undefined) query.set("status", params.status);
+    const qs = query.toString();
+    return request(`/metrics/runs${qs ? `?${qs}` : ""}`);
+  },
+  getMetricsTrends: (period: TrendPeriod, metric: TrendMetric, stat?: "avg" | "p95"): Promise<TrendPoint[]> =>
+    request(`/metrics/trends?period=${period}&metric=${metric}${stat ? `&stat=${stat}` : ""}`),
+  listMetricsTools: (): Promise<ToolMetrics[]> => request("/metrics/tools"),
+  listMetricsModels: (): Promise<ModelMetrics[]> => request("/metrics/models"),
+  backfillMetrics: (): Promise<BackfillResult> => request("/metrics/backfill", { method: "POST" }),
 };

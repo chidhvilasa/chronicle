@@ -30,3 +30,6 @@ export const TOAST_DURATION_MS = 8000;
 
 /** How often the Tests tab polls `GET /tests`, in ms. */
 export const TEST_LIST_POLL_INTERVAL_MS = 5000;
+
+/** How often the Performance tab's stat cards poll `GET /metrics/overview`, in ms. */
+export const METRICS_POLL_INTERVAL_MS = 30000;
