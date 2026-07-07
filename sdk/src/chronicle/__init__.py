@@ -13,6 +13,7 @@ a replacement.
 
 from chronicle.adapters.langgraph import LangGraphAdapter
 from chronicle.auto import instrument, instrument_context
+from chronicle.chaos import ChaosConfig, chaos
 from chronicle.models import ChronicleEvent, EventType, StateSnapshot, TokenUsage
 from chronicle.server_manager import ServerManager
 from chronicle.tracer import ChronicleTracer
@@ -29,5 +30,7 @@ __all__ = [
     "ServerManager",
     "instrument",
     "instrument_context",
+    "ChaosConfig",
+    "chaos",
     "__version__",
 ]

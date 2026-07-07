@@ -116,6 +116,11 @@ export function getReplayMetadata(run: Run): ReplayMetadata | null {
   return { sourceRunId, sourceSnapshotId, stepIndex };
 }
 
+/** Reads `metadata.chaos_mode` off a run, set by `chronicle.instrument(graph, chaos=...)`. */
+export function isChaosRun(run: Run): boolean {
+  return run.metadata["chaos_mode"] === true;
+}
+
 export type AssertionType =
   | "output_contains"
   | "output_not_contains"

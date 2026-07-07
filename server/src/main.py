@@ -37,6 +37,7 @@ from src.models import (
     RegisterGraphResponse,
     ReplayRequest,
     ReplayResponse,
+    RunMetadataRequest,
     RunMetricsOut,
     RunOut,
     SnapshotIn,
@@ -189,6 +190,18 @@ async def replay(request: ReplayRequest, background_tasks: BackgroundTasks) -> R
         extra_metadata=request.metadata,
     )
     return ReplayResponse(run_id=new_run_id)
+
+
+@app.post("/runs/{run_id}/metadata", status_code=204)
+async def set_run_metadata(run_id: str, request: RunMetadataRequest) -> None:
+    """Stamps `runs.metadata` for a run, creating the row if it doesn't exist yet.
+
+    Used by `chronicle-sdk`'s `ChronicleTracer.set_metadata()` (e.g. to mark a
+    chaos-enabled run `{chaos_mode: true, chaos_config: {...}}` so it's
+    visually distinguishable in the run list) - the same mechanism the replay
+    engine already uses internally to stamp `is_replay`/`source_run_id`.
+    """
+    await app.state.db.set_run_metadata(run_id, request.metadata)
 
 
 @app.get("/runs", response_model=list[RunOut])

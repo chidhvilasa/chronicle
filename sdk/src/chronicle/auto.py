@@ -1,10 +1,10 @@
 """Zero-friction auto-instrumentation: `chronicle.instrument(obj)`.
 
 Detects which framework `obj` belongs to (LangGraph, OpenAI Agents SDK,
-PydanticAI, CrewAI, or AutoGen) and wires up the matching adapter
-automatically, starting the Chronicle server in the background if one isn't
-already running. No manual `ChronicleTracer`/adapter construction required —
-see `README.md`'s Quickstart.
+PydanticAI, CrewAI, AutoGen, or Semantic Kernel) and wires up the matching
+adapter automatically, starting the Chronicle server in the background if
+one isn't already running. No manual `ChronicleTracer`/adapter construction
+required — see `README.md`'s Quickstart.
 """
 
 from __future__ import annotations
@@ -16,20 +16,29 @@ from contextlib import contextmanager
 from typing import Any, Iterator, Literal
 
 from chronicle.adapters.autogen import ChronicleAutoGenHook
+from chronicle.chaos import ChaosConfig
 from chronicle.adapters.crewai import ChronicleCrewAICallbackHandler
 from chronicle.adapters.langgraph import LangGraphAdapter
 from chronicle.adapters.openai_agents import ChronicleAgentHooks
 from chronicle.adapters.pydanticai import ChronicleMiddleware
+from chronicle.adapters.semantickernel import ChronicleKernelPlugin
 from chronicle.server_manager import ServerManager
 from chronicle.tracer import ChronicleTracer
 
 FrameworkName = Literal[
-    "langgraph", "openai_agents", "pydanticai", "crewai", "autogen", "unknown"
+    "langgraph",
+    "openai_agents",
+    "pydanticai",
+    "crewai",
+    "autogen",
+    "semantic_kernel",
+    "unknown",
 ]
 
 _UNKNOWN_FRAMEWORK_MESSAGE = (
     "Chronicle: detected unknown framework type. LangGraph, OpenAI Agents SDK, "
-    "PydanticAI, CrewAI, and AutoGen are supported. Manual adapter setup may be required."
+    "PydanticAI, CrewAI, AutoGen, and Semantic Kernel are supported. Manual adapter "
+    "setup may be required."
 )
 
 
@@ -37,10 +46,11 @@ def _detect_framework(obj: Any) -> FrameworkName:
     """Identifies which supported framework `obj` came from.
 
     Detection is by module path and class name only — it never imports
-    `langgraph`, `agents`, `pydantic_ai`, `crewai`, or `autogen` to do this,
-    so calling `instrument()` never raises `ImportError` for a framework
-    that isn't installed (and works against plain mock objects in tests,
-    which don't need the real frameworks installed either).
+    `langgraph`, `agents`, `pydantic_ai`, `crewai`, `autogen`, or
+    `semantic_kernel` to do this, so calling `instrument()` never raises
+    `ImportError` for a framework that isn't installed (and works against
+    plain mock objects in tests, which don't need the real frameworks
+    installed either).
     """
     module_root = (type(obj).__module__ or "").split(".")[0]
     class_name = type(obj).__name__
@@ -55,6 +65,8 @@ def _detect_framework(obj: Any) -> FrameworkName:
         return "crewai"
     if module_root == "autogen" and "Agent" in class_name:
         return "autogen"
+    if module_root == "semantic_kernel" and class_name == "Kernel":
+        return "semantic_kernel"
     return "unknown"
 
 
@@ -124,8 +136,10 @@ class _InstrumentedGraph:
             yield chunk
 
 
-def _instrument_langgraph(graph: Any, tracer: ChronicleTracer, agent_name: str) -> Any:
-    adapter = LangGraphAdapter(tracer, agent_name=agent_name)
+def _instrument_langgraph(
+    graph: Any, tracer: ChronicleTracer, agent_name: str, chaos: ChaosConfig | None
+) -> Any:
+    adapter = LangGraphAdapter(tracer, agent_name=agent_name, chaos=chaos)
     wrapped = _InstrumentedGraph(graph, adapter)
     module_name, attr_name = _resolve_module_and_attr(graph)
     if module_name and attr_name:
@@ -155,14 +169,38 @@ def _instrument_autogen(agent: Any, tracer: ChronicleTracer, agent_name: str) ->
     return ChronicleAutoGenHook(agent, tracer, agent_name=agent_name)
 
 
-def _build(obj: Any, agent_name: str | None) -> tuple[Any, ChronicleTracer]:
-    """Shared wiring logic behind both `instrument()` and `instrument_context()`."""
+def _instrument_semantic_kernel(kernel: Any, tracer: ChronicleTracer, agent_name: str) -> Any:
+    plugin = ChronicleKernelPlugin(tracer, agent_name=agent_name)
+    plugins = list(getattr(kernel, "plugins", None) or [])
+    plugins.append(plugin)
+    kernel.plugins = plugins
+    return kernel
+
+
+_CHAOS_UNSUPPORTED_MESSAGE = (
+    "Chronicle: chaos testing is only supported for LangGraph in this version "
+    "(see KNOWN_ISSUES.md) — ignoring chaos= for this framework."
+)
+
+
+def _build(
+    obj: Any, agent_name: str | None, chaos: ChaosConfig | None = None
+) -> tuple[Any, ChronicleTracer]:
+    """Shared wiring logic behind both `instrument()` and `instrument_context()`.
+
+    `chaos`, if given, only takes effect for LangGraph (the only framework
+    `ChaosMixin` is wired into so far); passing it for any other framework
+    prints a warning and is otherwise a no-op — never silently ignored
+    without at least telling the caller.
+    """
     tracer = ChronicleTracer()
     resolved_name = agent_name or f"session-{uuid.uuid4().hex[:8]}"
 
     framework = _detect_framework(obj)
     if framework == "langgraph":
-        result = _instrument_langgraph(obj, tracer, resolved_name)
+        result = _instrument_langgraph(obj, tracer, resolved_name, chaos)
+        if chaos is not None:
+            tracer.set_metadata({"chaos_mode": True, "chaos_config": chaos.to_dict()})
     elif framework == "openai_agents":
         result = _instrument_openai_agents(obj, tracer, resolved_name)
     elif framework == "pydanticai":
@@ -171,14 +209,19 @@ def _build(obj: Any, agent_name: str | None) -> tuple[Any, ChronicleTracer]:
         result = _instrument_crewai(obj, tracer, resolved_name)
     elif framework == "autogen":
         result = _instrument_autogen(obj, tracer, resolved_name)
+    elif framework == "semantic_kernel":
+        result = _instrument_semantic_kernel(obj, tracer, resolved_name)
     else:
         print(_UNKNOWN_FRAMEWORK_MESSAGE)
         result = obj
 
+    if chaos is not None and framework not in ("langgraph", "unknown"):
+        print(_CHAOS_UNSUPPORTED_MESSAGE)
+
     return result, tracer
 
 
-def instrument(obj: Any, *, agent_name: str | None = None) -> Any:
+def instrument(obj: Any, *, agent_name: str | None = None, chaos: ChaosConfig | None = None) -> Any:
     """One-line auto-instrumentation. Detects `obj`'s framework, wires up Chronicle, returns `obj`.
 
     ```python
@@ -192,8 +235,13 @@ def instrument(obj: Any, *, agent_name: str | None = None) -> Any:
     files, exactly like `ChronicleTracer` always has. Never raises for an
     unsupported/undetected framework — `obj` is returned unmodified and a
     message is printed instead.
+
+    `chaos`, if given (e.g. `chaos=chronicle.chaos()`), activates synthetic
+    tool-call failure/latency/malformed-response injection for this run —
+    see `chronicle.chaos.ChaosConfig`. Omitted (the default), there is no
+    chaos behavior whatsoever; it's never on by accident.
     """
-    result, tracer = _build(obj, agent_name)
+    result, tracer = _build(obj, agent_name, chaos)
 
     if ServerManager().ensure_running():
         print(f"Chronicle: recording to {tracer.server_url} — open the desktop app to inspect")
@@ -204,7 +252,9 @@ def instrument(obj: Any, *, agent_name: str | None = None) -> Any:
 
 
 @contextmanager
-def instrument_context(obj: Any, *, agent_name: str | None = None) -> Iterator[Any]:
+def instrument_context(
+    obj: Any, *, agent_name: str | None = None, chaos: ChaosConfig | None = None
+) -> Iterator[Any]:
     """Context-manager variant of `instrument()`.
 
     ```python
@@ -213,9 +263,10 @@ def instrument_context(obj: Any, *, agent_name: str | None = None) -> Iterator[A
     ```
 
     On exit, flushes every buffered event and prints a one-line run summary
-    instead of `instrument()`'s startup message.
+    instead of `instrument()`'s startup message. Accepts `chaos=` exactly
+    like `instrument()`.
     """
-    result, tracer = _build(obj, agent_name)
+    result, tracer = _build(obj, agent_name, chaos)
     ServerManager().ensure_running()
 
     stats = {"events": 0, "tokens": 0}

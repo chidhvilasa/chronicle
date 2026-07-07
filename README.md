@@ -65,7 +65,7 @@ Open the Chronicle desktop app. Run your agent. That is it.
 | PydanticAI | Supported |
 | CrewAI | Supported |
 | AutoGen | Supported |
-| Semantic Kernel | Coming in v0.7.0 |
+| Semantic Kernel | Supported |
 
 ## Getting started (development)
 

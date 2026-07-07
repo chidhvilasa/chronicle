@@ -152,6 +152,24 @@ class ChronicleTracer:
             )
             return False
 
+    def set_metadata(self, metadata: dict[str, Any]) -> bool:
+        """Stamps this run's `runs.metadata` on the server (e.g. `{chaos_mode: True, ...}`).
+
+        Safe to call before any events have been sent — the server creates the
+        run row if it doesn't already exist (see `Database.set_run_metadata`).
+        Returns `True` if the server acknowledged it, `False` if unreachable or
+        it rejected the request; never raises.
+        """
+        try:
+            response = self._client.post(
+                f"{self.server_url}/runs/{self.run_id}/metadata", json={"metadata": metadata}
+            )
+            response.raise_for_status()
+            return True
+        except httpx.HTTPError:
+            logger.warning("Chronicle: failed to set metadata for run '%s'", self.run_id, exc_info=True)
+            return False
+
     def close(self) -> None:
         self.flush()
         self._client.close()

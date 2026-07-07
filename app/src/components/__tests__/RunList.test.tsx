@@ -112,6 +112,31 @@ describe("RunList", () => {
     expect(screen.queryByTestId("replay-badge")).not.toBeInTheDocument();
   });
 
+  it("shows a CHAOS badge with a tooltip for chaos-mode runs", async () => {
+    const chaosRun: Run = {
+      ...run,
+      run_id: "run-chaos-1",
+      metadata: { chaos_mode: true, chaos_config: { tool_failure_rate: 0.2 } },
+    };
+    vi.mocked(chronicleApi.listRuns).mockResolvedValue([chaosRun]);
+    render(<RunList />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("chaos-badge")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("chaos-badge")).toHaveAttribute("title", expect.stringMatching(/chaos/i));
+  });
+
+  it("does not show a CHAOS badge for a non-chaos run", async () => {
+    vi.mocked(chronicleApi.listRuns).mockResolvedValue([run]);
+    render(<RunList />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/42 tokens/)).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("chaos-badge")).not.toBeInTheDocument();
+  });
+
   it("opens the create-test modal with the run's id pre-filled when Create Test is clicked", async () => {
     vi.mocked(chronicleApi.listRuns).mockResolvedValue([run]);
     render(<RunList />);

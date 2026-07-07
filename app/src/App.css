@@ -204,6 +204,16 @@
   letter-spacing: 0.02em;
 }
 
+.run-card-chaos-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #fff;
+  background-color: #dc2626;
+  border-radius: 4px;
+  padding: 0.05rem 0.35rem;
+  letter-spacing: 0.02em;
+}
+
 .run-card-status {
   font-size: 0.7rem;
   font-weight: 600;

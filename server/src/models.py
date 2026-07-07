@@ -322,6 +322,12 @@ class MemoryListOut(BaseModel):
     message: str | None = None
 
 
+class RunMetadataRequest(BaseModel):
+    """Body of `POST /runs/{id}/metadata` — e.g. `{"chaos_mode": true, "chaos_config": {...}}`."""
+
+    metadata: dict[str, Any]
+
+
 AssertionTypeLiteral = Literal[
     "output_contains",
     "output_not_contains",

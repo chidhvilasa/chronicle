@@ -1,10 +1,14 @@
 import json
+import random
 import uuid
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
+
 from chronicle import ChronicleTracer
 from chronicle.adapters.langgraph import LangGraphAdapter
+from chronicle.chaos import ChaosConfig
 
 
 def _tracer(tmp_path, **kwargs):
@@ -161,6 +165,44 @@ def test_on_chain_error_records_error_event(tmp_path):
     assert events[0]["event_type"] == "error"
     assert events[0]["error"] == "boom"
     assert events[0]["data"]["error_type"] == "ValueError"
+
+
+def test_chaos_tool_failure_raises_before_recording_a_tool_call_event(tmp_path):
+    random.seed(42)
+    tracer = _tracer(tmp_path)
+    adapter = LangGraphAdapter(tracer, chaos=ChaosConfig(tool_failure_rate=1.0, tool_failure_message="boom"))
+
+    with pytest.raises(RuntimeError, match="boom"):
+        adapter.on_tool_start({"name": "search"}, "query", run_id=uuid.uuid4())
+
+
+def test_chaos_inactive_by_default(tmp_path):
+    tracer = _tracer(tmp_path)
+    adapter = LangGraphAdapter(tracer)
+    run_id = uuid.uuid4()
+
+    adapter.on_tool_start({"name": "search"}, "query", run_id=run_id)
+    adapter.on_tool_end("real result", run_id=run_id)
+    tracer.close()
+
+    events = _read_events(tmp_path, tracer.run_id)
+    assert events[0]["data"]["result"] == "real result"
+
+
+def test_chaos_malformed_response_substitutes_the_recorded_result(tmp_path):
+    random.seed(42)
+    tracer = _tracer(tmp_path)
+    adapter = LangGraphAdapter(
+        tracer, chaos=ChaosConfig(malformed_response_rate=1.0, malformed_response_value="TRUNCATED")
+    )
+    run_id = uuid.uuid4()
+
+    adapter.on_tool_start({"name": "search"}, "query", run_id=run_id)
+    adapter.on_tool_end("real result", run_id=run_id)
+    tracer.close()
+
+    events = _read_events(tmp_path, tracer.run_id)
+    assert events[0]["data"]["result"] == "TRUNCATED"
 
 
 def test_auto_registers_graph_when_graph_module_and_attr_are_given():

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { chronicleApi, ChronicleApiError } from "../api/client";
 import { RUN_LIST_POLL_INTERVAL_MS } from "../config";
 import { useAppStore } from "../store/useAppStore";
-import { getReplayMetadata, type Event, type Run } from "../types";
+import { getReplayMetadata, isChaosRun, type Event, type Run } from "../types";
 import { CreateTestModal } from "./Tests/CreateTestModal";
 
 function formatRelativeTime(unixSeconds: number): string {
@@ -46,6 +46,7 @@ function RunCard({
 }) {
   const badge = statusBadge(run.status);
   const replayMeta = getReplayMetadata(run);
+  const isChaos = isChaosRun(run);
   return (
     <li className="run-card-item">
       <button type="button" className={isSelected ? "run-card active" : "run-card"} onClick={onSelect}>
@@ -58,6 +59,15 @@ function RunCard({
               title={`Replayed from run ${replayMeta.sourceRunId} at step ${replayMeta.stepIndex}`}
             >
               REPLAY
+            </span>
+          )}
+          {isChaos && (
+            <span
+              className="run-card-chaos-badge"
+              data-testid="chaos-badge"
+              title="Chaos mode: synthetic tool failures/latency/malformed responses were injected into this run"
+            >
+              CHAOS
             </span>
           )}
         </span>

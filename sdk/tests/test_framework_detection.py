@@ -71,6 +71,21 @@ def test_returns_unknown_for_an_autogen_module_class_without_agent_in_the_name()
     assert _detect_framework(group_chat) == "unknown"
 
 
+def test_detects_semantic_kernel_kernel():
+    kernel = _make_instance("semantic_kernel", "Kernel")
+    assert _detect_framework(kernel) == "semantic_kernel"
+
+
+def test_detects_semantic_kernel_from_submodule():
+    kernel = _make_instance("semantic_kernel.kernel", "Kernel")
+    assert _detect_framework(kernel) == "semantic_kernel"
+
+
+def test_returns_unknown_for_a_semantic_kernel_module_class_that_is_not_a_kernel():
+    plugin = _make_instance("semantic_kernel", "KernelPlugin")
+    assert _detect_framework(plugin) == "unknown"
+
+
 def test_returns_unknown_for_unrelated_object():
     assert _detect_framework(object()) == "unknown"
 

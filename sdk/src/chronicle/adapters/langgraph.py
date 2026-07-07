@@ -14,6 +14,7 @@ import time
 from typing import Any
 from uuid import UUID
 
+from chronicle.chaos import ChaosConfig, ChaosMixin
 from chronicle.memory_diff import json_safe_dict, record_memory_update
 from chronicle.models import StateSnapshot, TokenUsage
 from chronicle.tracer import ChronicleTracer
@@ -36,16 +37,23 @@ class LangGraphAdapter(_BaseCallbackHandler):  # type: ignore[misc]
         graph: Any = None,
         graph_module: str | None = None,
         graph_attr: str | None = None,
+        chaos: ChaosConfig | None = None,
     ) -> None:
         """`graph`/`graph_module`/`graph_attr` are optional; if all three are given, the
         graph is auto-registered with the server (via `tracer.register_graph`) so
         `POST /replay` can re-invoke it later. See `ChronicleTracer.register_graph`.
+
+        `chaos`, if given, activates synthetic tool-call failure/latency/malformed-
+        response injection for this run (see `chronicle.chaos`) — never applied to
+        LLM calls. `None` (the default) means chaos is fully inactive; there is no
+        way to end up with chaos behavior without explicitly passing a `ChaosConfig`.
         """
         self.tracer = tracer
         self.agent_name = agent_name
         self._pending: dict[UUID, dict[str, Any]] = {}
         self._pending_memory: dict[UUID, dict[str, Any]] = {}
         self._step_index = 0
+        self._chaos = ChaosMixin(chaos) if chaos is not None else None
         if graph is not None and graph_module is not None and graph_attr is not None:
             tracer.register_graph(graph, graph_module, graph_attr)
 
@@ -75,20 +83,37 @@ class LangGraphAdapter(_BaseCallbackHandler):  # type: ignore[misc]
     def on_tool_start(
         self, serialized: dict[str, Any], input_str: str, *, run_id: UUID, **kwargs: Any
     ) -> None:
+        tool_name = serialized.get("name", "unknown")
         self._pending[run_id] = {
             "start": time.time(),
-            "tool_name": serialized.get("name", "unknown"),
+            "tool_name": tool_name,
             "input": input_str,
         }
 
+        if self._chaos is not None:
+            if self._chaos.should_fail(tool_name):
+                self._chaos.raise_configured_failure()
+            delay_ms = self._chaos.latency_ms(tool_name)
+            if delay_ms > 0:
+                time.sleep(delay_ms / 1000)
+
     def on_tool_end(self, output: Any, *, run_id: UUID, **kwargs: Any) -> None:
         pending = self._pending.pop(run_id, {})
+        tool_name = pending.get("tool_name", "unknown")
+
+        result = output
+        if self._chaos is not None and self._chaos.should_malform():
+            # Callback handlers can only observe a tool call, not rewrite what the
+            # agent already received — this substitutes what gets *recorded*, so
+            # the malformed response is still visible for chaos-testing analysis.
+            result = self._chaos.config.malformed_response_value
+
         self.tracer.record_event(
             "tool_call",
             data={
-                "tool_name": pending.get("tool_name", "unknown"),
+                "tool_name": tool_name,
                 "arguments": {"input": pending.get("input", "")},
-                "result": str(output),
+                "result": str(result),
             },
             agent_name=self.agent_name,
             duration_ms=_elapsed_ms(pending.get("start")),

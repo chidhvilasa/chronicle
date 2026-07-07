@@ -49,6 +49,23 @@ def test_create_events_and_list_runs(client):
     assert runs[0]["status"] == "running"
 
 
+def test_set_run_metadata_creates_the_run_row_if_it_does_not_exist(client):
+    response = client.post("/runs/run-chaos/metadata", json={"metadata": {"chaos_mode": True}})
+    assert response.status_code == 204
+
+    run = next(r for r in client.get("/runs").json() if r["run_id"] == "run-chaos")
+    assert run["metadata"]["chaos_mode"] is True
+
+
+def test_set_run_metadata_does_not_clobber_aggregates_from_events(client):
+    client.post("/events", json=[_event()])
+    client.post("/runs/run-1/metadata", json={"metadata": {"chaos_mode": True}})
+
+    run = client.get("/runs").json()[0]
+    assert run["metadata"]["chaos_mode"] is True
+    assert run["agent_count"] == 1
+
+
 def test_create_events_computes_total_tokens_and_error_status(client):
     events = [
         _event(

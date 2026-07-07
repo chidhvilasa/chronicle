@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 import chronicle
 from chronicle import auto as auto_module
 from chronicle.adapters.langgraph import LangGraphAdapter
+from chronicle.chaos import ChaosConfig
 from chronicle.tracer import ChronicleTracer
 
 
@@ -99,6 +100,31 @@ def test_instrument_prints_success_message_when_server_available(monkeypatch, tm
     out = capsys.readouterr().out
     assert "recording to" in out
     assert "open the desktop app to inspect" in out
+
+
+def test_instrument_with_chaos_config_stamps_run_metadata(monkeypatch, tmp_path):
+    monkeypatch.setattr(auto_module.ServerManager, "ensure_running", MagicMock(return_value=False))
+    monkeypatch.chdir(tmp_path)
+    set_metadata_mock = MagicMock(return_value=True)
+    monkeypatch.setattr(auto_module.ChronicleTracer, "set_metadata", set_metadata_mock)
+
+    chronicle.instrument(_MockCompiledGraph(), chaos=ChaosConfig(tool_failure_rate=0.3))
+
+    set_metadata_mock.assert_called_once()
+    metadata = set_metadata_mock.call_args[0][0]
+    assert metadata["chaos_mode"] is True
+    assert metadata["chaos_config"]["tool_failure_rate"] == 0.3
+
+
+def test_instrument_without_chaos_does_not_stamp_metadata(monkeypatch, tmp_path):
+    monkeypatch.setattr(auto_module.ServerManager, "ensure_running", MagicMock(return_value=False))
+    monkeypatch.chdir(tmp_path)
+    set_metadata_mock = MagicMock(return_value=True)
+    monkeypatch.setattr(auto_module.ChronicleTracer, "set_metadata", set_metadata_mock)
+
+    chronicle.instrument(_MockCompiledGraph())
+
+    set_metadata_mock.assert_not_called()
 
 
 def test_instrument_unknown_framework_returns_object_unchanged_and_warns(monkeypatch, tmp_path, capsys):
