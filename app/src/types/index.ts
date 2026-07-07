@@ -281,3 +281,57 @@ export interface ExecutionGraph {
   edges: GraphEdge[];
   metadata: GraphMetadata;
 }
+
+// Mirrors server/src/models.py's PromptSummaryOut/PromptDetailOut/PromptDiffOut/
+// MemorySnapshotOut/MemoryListOut (`GET/POST /runs/{id}/prompts|memory`, `GET
+// /prompts/diff`, Phase 24).
+
+export interface PromptSummary {
+  event_id: string;
+  step_index: number;
+  agent_name: string | null;
+  timestamp: number;
+  total_chars: number;
+  total_tokens: number;
+}
+
+export interface PromptMessage {
+  role: string;
+  content: string;
+}
+
+export interface PromptDetail {
+  event_id: string;
+  step_index: number;
+  agent_name: string | null;
+  timestamp: number;
+  system_prompt: string | null;
+  user_messages: PromptMessage[];
+  assistant_messages: PromptMessage[];
+  total_chars: number;
+  total_tokens: number;
+}
+
+export interface PromptDiffResult {
+  additions: number;
+  deletions: number;
+  unchanged: number;
+  diff_html: string;
+}
+
+export interface MemorySnapshot {
+  event_id: string;
+  step_index: number;
+  agent_name: string | null;
+  timestamp: number;
+  memory_before: Record<string, unknown>;
+  memory_after: Record<string, unknown>;
+  keys_added: string[];
+  keys_removed: string[];
+  keys_changed: string[];
+}
+
+export interface MemoryList {
+  snapshots: MemorySnapshot[];
+  message: string | null;
+}

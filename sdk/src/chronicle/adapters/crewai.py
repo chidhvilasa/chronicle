@@ -13,8 +13,20 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from chronicle.memory_diff import json_safe_dict, record_memory_update
 from chronicle.models import TokenUsage
 from chronicle.tracer import ChronicleTracer
+
+
+def _extract_state(kwargs: dict[str, Any]) -> Any:
+    """Looks for a `state`/`memory` dict passed to a hook call, per the SDK's memory-capture
+    convention (see `chronicle.memory_diff`).
+    """
+    for name in ("state", "memory"):
+        value = kwargs.get(name)
+        if isinstance(value, dict):
+            return value
+    return None
 
 
 class ChronicleCrewAICallbackHandler:
@@ -30,9 +42,13 @@ class ChronicleCrewAICallbackHandler:
         self.tracer = tracer
         self.agent_name = agent_name
         self._start_times: dict[str, float] = {}
+        self._pending_memory: dict[str, Any] = {}
 
     def on_crew_start(self, crew: Any = None, inputs: dict[str, Any] | None = None, **kwargs: Any) -> None:
         self._start_times["crew"] = time.time()
+        state = _extract_state(kwargs)
+        if state is not None:
+            self._pending_memory["crew"] = json_safe_dict(state)
         self.tracer.record_event(
             "agent_message",
             data={
@@ -47,6 +63,9 @@ class ChronicleCrewAICallbackHandler:
 
     def on_crew_end(self, crew: Any = None, output: Any = None, **kwargs: Any) -> None:
         start = self._start_times.pop("crew", None)
+        before = self._pending_memory.pop("crew", None)
+        if before is not None:
+            record_memory_update(self.tracer, self.agent_name, before, _extract_state(kwargs))
         self.tracer.record_event(
             "agent_message",
             data={"event": "crew_end", "crew_name": _crew_name(crew), "output": str(output)},

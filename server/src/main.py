@@ -19,14 +19,20 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from src import __version__
 from src.database import DEFAULT_DB_PATH, Database
 from src.graph_builder import build_graph
+from src.memory_builder import build_memory_snapshots
 from src.models import (
     BackfillResponse,
     EventIn,
     EventOut,
     GraphOut,
     HealthOut,
+    MemoryListOut,
+    MemorySnapshotOut,
     MetricsOverviewOut,
     ModelMetricsOut,
+    PromptDetailOut,
+    PromptDiffOut,
+    PromptSummaryOut,
     RegisterGraphRequest,
     RegisterGraphResponse,
     ReplayRequest,
@@ -43,6 +49,8 @@ from src.models import (
     ToolMetricsOut,
     TrendPointOut,
 )
+from src.prompt_diff import compute_prompt_diff
+from src.prompts import build_prompt_detail, build_prompt_summaries, prompt_text
 from src.registry import GraphRegistrationError, GraphRegistry
 from src.replay import ReplayEngine
 from src.timeline import build_timeline
@@ -234,6 +242,63 @@ async def get_run_graph(run_id: str) -> GraphOut:
     events = await app.state.db.list_events(run_id)
     graph = build_graph(events)
     return GraphOut(run_id=run_id, nodes=graph["nodes"], edges=graph["edges"], metadata=graph["metadata"])
+
+
+@app.get("/runs/{run_id}/prompts", response_model=list[PromptSummaryOut])
+async def list_run_prompts(run_id: str) -> list[PromptSummaryOut]:
+    run = await app.state.db.get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' was not found")
+    events = await app.state.db.list_events(run_id)
+    return [PromptSummaryOut(**summary) for summary in build_prompt_summaries(events)]
+
+
+@app.get("/runs/{run_id}/prompts/{event_id}", response_model=PromptDetailOut)
+async def get_run_prompt(run_id: str, event_id: str) -> PromptDetailOut:
+    run = await app.state.db.get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' was not found")
+    events = await app.state.db.list_events(run_id)
+    detail = build_prompt_detail(events, event_id)
+    if detail is None:
+        raise HTTPException(
+            status_code=404, detail=f"Prompt event '{event_id}' was not found for run '{run_id}'"
+        )
+    return PromptDetailOut(**detail)
+
+
+@app.get("/prompts/diff", response_model=PromptDiffOut)
+async def get_prompts_diff(run_id_a: str, event_id_a: str, run_id_b: str, event_id_b: str) -> PromptDiffOut:
+    events_a = await app.state.db.list_events(run_id_a)
+    events_b = await app.state.db.list_events(run_id_b)
+    detail_a = build_prompt_detail(events_a, event_id_a)
+    detail_b = build_prompt_detail(events_b, event_id_b)
+    if detail_a is None:
+        raise HTTPException(
+            status_code=404, detail=f"Prompt event '{event_id_a}' was not found for run '{run_id_a}'"
+        )
+    if detail_b is None:
+        raise HTTPException(
+            status_code=404, detail=f"Prompt event '{event_id_b}' was not found for run '{run_id_b}'"
+        )
+    diff = compute_prompt_diff(prompt_text(detail_a), prompt_text(detail_b))
+    return PromptDiffOut(**diff)
+
+
+@app.get("/runs/{run_id}/memory", response_model=MemoryListOut)
+async def get_run_memory(run_id: str) -> MemoryListOut:
+    run = await app.state.db.get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' was not found")
+    events = await app.state.db.list_events(run_id)
+    snapshots = build_memory_snapshots(events)
+    message = None
+    if not snapshots:
+        message = (
+            "No memory updates recorded for this run. Memory tracking requires "
+            "chronicle-sdk 0.7.0 or higher."
+        )
+    return MemoryListOut(snapshots=[MemorySnapshotOut(**s) for s in snapshots], message=message)
 
 
 @app.delete("/runs/{run_id}", status_code=204)

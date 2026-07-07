@@ -271,6 +271,57 @@ class GraphOut(BaseModel):
     metadata: GraphMetadataOut
 
 
+class PromptSummaryOut(BaseModel):
+    """One `llm_call` event, without message content - from `GET /runs/{id}/prompts`."""
+
+    event_id: str
+    step_index: int
+    agent_name: str | None
+    timestamp: float
+    total_chars: int
+    total_tokens: int
+
+
+class PromptDetailOut(BaseModel):
+    """Full prompt content for one `llm_call` event - from `GET /runs/{id}/prompts/{event_id}`."""
+
+    event_id: str
+    step_index: int
+    agent_name: str | None
+    timestamp: float
+    system_prompt: str | None
+    user_messages: list[dict[str, Any]]
+    assistant_messages: list[dict[str, Any]]
+    total_chars: int
+    total_tokens: int
+
+
+class PromptDiffOut(BaseModel):
+    additions: int
+    deletions: int
+    unchanged: int
+    diff_html: str
+
+
+class MemorySnapshotOut(BaseModel):
+    """One `memory_update` event's before/after diff - from `GET /runs/{id}/memory`."""
+
+    event_id: str
+    step_index: int
+    agent_name: str | None
+    timestamp: float
+    memory_before: dict[str, Any]
+    memory_after: dict[str, Any]
+    keys_added: list[str]
+    keys_removed: list[str]
+    keys_changed: list[str]
+
+
+class MemoryListOut(BaseModel):
+    snapshots: list[MemorySnapshotOut]
+    message: str | None = None
+
+
 AssertionTypeLiteral = Literal[
     "output_contains",
     "output_not_contains",

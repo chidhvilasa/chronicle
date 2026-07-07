@@ -3,7 +3,7 @@ import type { DetailItem, Run } from "../types";
 
 export type PanelId = "timeline" | "inspector" | "diff" | "tests" | "performance" | "graph";
 
-export type InspectorTab = "event" | "agent" | "tools";
+export type InspectorTab = "event" | "agent" | "tools" | "prompts" | "memory";
 
 export interface DiffPrefill {
   runAId: string;

@@ -12,7 +12,20 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from chronicle.memory_diff import json_safe_dict, record_memory_update
 from chronicle.tracer import ChronicleTracer
+
+
+def _extract_state(kwargs: dict[str, Any]) -> Any:
+    """Looks for a `state`/`memory` dict passed to a hook call, per the SDK's memory-capture
+    convention (see `chronicle.memory_diff`) - none of these hooks are guaranteed to receive
+    one, so this returns `None` when neither is present.
+    """
+    for name in ("state", "memory"):
+        value = kwargs.get(name)
+        if isinstance(value, dict):
+            return value
+    return None
 
 
 class ChronicleAgentHooks:
@@ -28,10 +41,14 @@ class ChronicleAgentHooks:
         self.tracer = tracer
         self.agent_name = agent_name
         self._start_times: dict[str, float] = {}
+        self._pending_memory: dict[str, Any] = {}
 
     def on_agent_start(self, agent: Any = None, input: Any = None, **kwargs: Any) -> None:
         name = _agent_name(agent, self.agent_name)
         self._start_times["agent"] = time.time()
+        state = _extract_state(kwargs)
+        if state is not None:
+            self._pending_memory["agent"] = json_safe_dict(state)
         self.tracer.record_event(
             "agent_message",
             data={"event": "agent_start", "agent_name": name, "input": str(input)},
@@ -41,6 +58,9 @@ class ChronicleAgentHooks:
     def on_agent_end(self, agent: Any = None, output: Any = None, **kwargs: Any) -> None:
         name = _agent_name(agent, self.agent_name)
         start = self._start_times.pop("agent", None)
+        before = self._pending_memory.pop("agent", None)
+        if before is not None:
+            record_memory_update(self.tracer, name, before, _extract_state(kwargs))
         self.tracer.record_event(
             "agent_message",
             data={"event": "agent_end", "agent_name": name, "output": str(output)},

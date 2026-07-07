@@ -107,6 +107,39 @@ def test_run_sync_records_error_event_and_reraises(tmp_path):
     assert events[0]["error"] == "model unavailable"
 
 
+def test_run_sync_records_memory_update_when_state_kwarg_mutates_in_place(tmp_path):
+    tracer = _tracer(tmp_path)
+    state = {"count": 1}
+
+    def run_sync(prompt, *args, **kwargs):
+        kwargs["state"]["count"] = 2
+        return _make_result(output="done")
+
+    agent = SimpleNamespace(name="assistant", model=SimpleNamespace(model_name="gpt-4o"), run_sync=run_sync)
+    middleware = ChronicleMiddleware(agent, tracer)
+
+    middleware.run_sync("hi", state=state)
+    tracer.close()
+
+    events = _read_events(tmp_path, tracer.run_id)
+    memory_events = [e for e in events if e["event_type"] == "memory_update"]
+    assert len(memory_events) == 1
+    assert memory_events[0]["data"]["memory_before"] == {"count": 1}
+    assert memory_events[0]["data"]["memory_after"] == {"count": 2}
+
+
+def test_run_sync_records_no_memory_update_without_a_state_kwarg(tmp_path):
+    tracer = _tracer(tmp_path)
+    agent = _make_agent(result=_make_result())
+    middleware = ChronicleMiddleware(agent, tracer)
+
+    middleware.run_sync("hi")
+    tracer.close()
+
+    events = _read_events(tmp_path, tracer.run_id)
+    assert not any(e["event_type"] == "memory_update" for e in events)
+
+
 def test_middleware_delegates_unknown_attributes_to_the_wrapped_agent(tmp_path):
     tracer = _tracer(tmp_path)
     agent = _make_agent(result=_make_result())

@@ -104,6 +104,52 @@ def test_on_agent_finish_records_agent_message(tmp_path):
     assert events[0]["data"]["content"] == "done"
 
 
+def test_on_chain_start_and_end_record_memory_update_when_state_changes(tmp_path):
+    tracer = _tracer(tmp_path)
+    adapter = LangGraphAdapter(tracer, agent_name="test-agent")
+    run_id = uuid.uuid4()
+
+    adapter.on_chain_start({}, {"counter": 1}, run_id=run_id)
+    adapter.on_chain_end({"counter": 2}, run_id=run_id)
+    tracer.close()
+
+    events = _read_events(tmp_path, tracer.run_id)
+    memory_events = [e for e in events if e["event_type"] == "memory_update"]
+    assert len(memory_events) == 1
+    assert memory_events[0]["data"]["memory_before"] == {"counter": 1}
+    assert memory_events[0]["data"]["memory_after"] == {"counter": 2}
+    assert memory_events[0]["data"]["keys_changed"] == ["counter"]
+
+
+def test_on_chain_end_records_no_memory_update_when_state_is_unchanged(tmp_path):
+    tracer = _tracer(tmp_path)
+    adapter = LangGraphAdapter(tracer)
+    run_id = uuid.uuid4()
+
+    adapter.on_chain_start({}, {"counter": 1}, run_id=run_id)
+    adapter.on_chain_end({"counter": 1}, run_id=run_id)
+    # Force the events file to exist, since an unchanged memory diff records nothing.
+    adapter.on_agent_action("noop", run_id=uuid.uuid4())
+    tracer.close()
+
+    events = _read_events(tmp_path, tracer.run_id)
+    assert not any(e["event_type"] == "memory_update" for e in events)
+
+
+def test_on_chain_end_records_no_memory_update_without_a_matching_chain_start(tmp_path):
+    tracer = _tracer(tmp_path)
+    adapter = LangGraphAdapter(tracer)
+
+    adapter.on_chain_end({"counter": 1}, run_id=uuid.uuid4())
+    # Force the events file to exist even though on_chain_end alone only records a
+    # snapshot (not an event), so _read_events has something to read.
+    adapter.on_agent_action("noop", run_id=uuid.uuid4())
+    tracer.close()
+
+    events = _read_events(tmp_path, tracer.run_id)
+    assert not any(e["event_type"] == "memory_update" for e in events)
+
+
 def test_on_chain_error_records_error_event(tmp_path):
     tracer = _tracer(tmp_path)
     adapter = LangGraphAdapter(tracer)

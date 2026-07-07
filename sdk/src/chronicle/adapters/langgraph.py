@@ -14,6 +14,7 @@ import time
 from typing import Any
 from uuid import UUID
 
+from chronicle.memory_diff import json_safe_dict, record_memory_update
 from chronicle.models import StateSnapshot, TokenUsage
 from chronicle.tracer import ChronicleTracer
 
@@ -43,6 +44,7 @@ class LangGraphAdapter(_BaseCallbackHandler):  # type: ignore[misc]
         self.tracer = tracer
         self.agent_name = agent_name
         self._pending: dict[UUID, dict[str, Any]] = {}
+        self._pending_memory: dict[UUID, dict[str, Any]] = {}
         self._step_index = 0
         if graph is not None and graph_module is not None and graph_attr is not None:
             tracer.register_graph(graph, graph_module, graph_attr)
@@ -108,7 +110,15 @@ class LangGraphAdapter(_BaseCallbackHandler):  # type: ignore[misc]
         return_values = getattr(finish, "return_values", None)
         self._capture_snapshot(return_values if isinstance(return_values, dict) else {})
 
+    def on_chain_start(
+        self, serialized: dict[str, Any], inputs: dict[str, Any], *, run_id: UUID, **kwargs: Any
+    ) -> None:
+        self._pending_memory[run_id] = json_safe_dict(inputs)
+
     def on_chain_end(self, outputs: dict[str, Any], *, run_id: UUID, **kwargs: Any) -> None:
+        before = self._pending_memory.pop(run_id, None)
+        if before is not None:
+            record_memory_update(self.tracer, self.agent_name, before, outputs)
         self._capture_snapshot(outputs)
 
     def on_chain_error(self, error: BaseException, *, run_id: UUID, **kwargs: Any) -> None:

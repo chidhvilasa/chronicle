@@ -13,8 +13,20 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from chronicle.memory_diff import json_safe_dict, record_memory_update
 from chronicle.models import TokenUsage
 from chronicle.tracer import ChronicleTracer
+
+
+def _extract_state(kwargs: dict[str, Any]) -> Any:
+    """Looks for a `state`/`memory` dict passed to `run_sync(...)`, per the SDK's
+    memory-capture convention (see `chronicle.memory_diff`).
+    """
+    for name in ("state", "memory"):
+        value = kwargs.get(name)
+        if isinstance(value, dict):
+            return value
+    return None
 
 
 class ChronicleMiddleware:
@@ -30,6 +42,10 @@ class ChronicleMiddleware:
 
     def run_sync(self, prompt: Any = None, *args: Any, **kwargs: Any) -> Any:
         model_name = _extract_model_name(self._agent)
+        before_state = _extract_state(kwargs)
+        # Captured as an independent snapshot now, in case `run_sync` mutates the same
+        # dict object in place - otherwise "before" and "after" would alias one another.
+        before_snapshot = json_safe_dict(before_state) if before_state is not None else None
         start = time.time()
         try:
             result = self._agent.run_sync(prompt, *args, **kwargs)
@@ -42,6 +58,9 @@ class ChronicleMiddleware:
                 error=str(exc),
             )
             raise
+
+        if before_snapshot is not None:
+            record_memory_update(self.tracer, self.agent_name, before_snapshot, _extract_state(kwargs))
 
         self.tracer.record_event(
             "llm_call",

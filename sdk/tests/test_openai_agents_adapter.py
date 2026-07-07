@@ -86,6 +86,36 @@ def test_on_handoff_records_source_and_target_agent(tmp_path):
     assert events[0]["agent_name"] == "triage"
 
 
+def test_on_agent_start_and_end_record_memory_update_when_state_kwarg_changes(tmp_path):
+    tracer = _tracer(tmp_path)
+    hooks = ChronicleAgentHooks(tracer)
+    agent = SimpleNamespace(name="researcher")
+
+    hooks.on_agent_start(agent=agent, input="go", state={"count": 1})
+    hooks.on_agent_end(agent=agent, output="done", state={"count": 2})
+    tracer.close()
+
+    events = _read_events(tmp_path, tracer.run_id)
+    memory_events = [e for e in events if e["event_type"] == "memory_update"]
+    assert len(memory_events) == 1
+    assert memory_events[0]["data"]["memory_before"] == {"count": 1}
+    assert memory_events[0]["data"]["memory_after"] == {"count": 2}
+    assert memory_events[0]["data"]["keys_changed"] == ["count"]
+
+
+def test_no_memory_update_when_no_state_kwarg_is_passed(tmp_path):
+    tracer = _tracer(tmp_path)
+    hooks = ChronicleAgentHooks(tracer)
+    agent = SimpleNamespace(name="researcher")
+
+    hooks.on_agent_start(agent=agent, input="go")
+    hooks.on_agent_end(agent=agent, output="done")
+    tracer.close()
+
+    events = _read_events(tmp_path, tracer.run_id)
+    assert not any(e["event_type"] == "memory_update" for e in events)
+
+
 def test_hooks_fall_back_to_default_agent_name_when_agent_has_no_name(tmp_path):
     tracer = _tracer(tmp_path)
     hooks = ChronicleAgentHooks(tracer, agent_name="fallback-agent")

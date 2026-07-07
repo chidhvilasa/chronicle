@@ -141,6 +141,23 @@ def test_on_tool_error_records_error_event(tmp_path):
     assert events[1]["error"] == "timeout"
 
 
+def test_on_crew_start_and_end_record_memory_update_when_state_kwarg_changes(tmp_path):
+    tracer = _tracer(tmp_path)
+    handler = ChronicleCrewAICallbackHandler(tracer)
+    crew = _make_crew()
+
+    handler.on_crew_start(crew=crew, inputs={}, state={"phase": "start"})
+    handler.on_crew_end(crew=crew, output="done", state={"phase": "end"})
+    tracer.close()
+
+    events = _read_events(tmp_path, tracer.run_id)
+    memory_events = [e for e in events if e["event_type"] == "memory_update"]
+    assert len(memory_events) == 1
+    assert memory_events[0]["data"]["memory_before"] == {"phase": "start"}
+    assert memory_events[0]["data"]["memory_after"] == {"phase": "end"}
+    assert memory_events[0]["data"]["keys_changed"] == ["phase"]
+
+
 def test_handler_falls_back_to_default_agent_name_when_agent_has_no_role(tmp_path):
     tracer = _tracer(tmp_path)
     handler = ChronicleCrewAICallbackHandler(tracer, agent_name="fallback-agent")

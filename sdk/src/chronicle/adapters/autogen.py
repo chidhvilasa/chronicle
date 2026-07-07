@@ -13,8 +13,20 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from chronicle.memory_diff import json_safe_dict, record_memory_update
 from chronicle.models import TokenUsage
 from chronicle.tracer import ChronicleTracer
+
+
+def _extract_state(kwargs: dict[str, Any]) -> Any:
+    """Looks for a `state`/`memory` dict passed to `initiate_chat(...)`, per the SDK's
+    memory-capture convention (see `chronicle.memory_diff`).
+    """
+    for name in ("state", "memory"):
+        value = kwargs.get(name)
+        if isinstance(value, dict):
+            return value
+    return None
 
 
 class ChronicleAutoGenHook:
@@ -35,6 +47,8 @@ class ChronicleAutoGenHook:
         recipient_name = _agent_name(recipient, "unknown")
         self._conversation_start = time.time()
         self._message_count = 0
+        before_state = _extract_state(kwargs)
+        before_snapshot = json_safe_dict(before_state) if before_state is not None else None
         self.tracer.record_event(
             "agent_message",
             data={
@@ -47,6 +61,9 @@ class ChronicleAutoGenHook:
         )
 
         result = self._agent.initiate_chat(recipient, message, *args, **kwargs)
+
+        if before_snapshot is not None:
+            record_memory_update(self.tracer, self.agent_name, before_snapshot, _extract_state(kwargs))
 
         self.tracer.record_event(
             "agent_message",

@@ -128,6 +128,27 @@ def test_execute_function_records_tool_call_and_tool_result(tmp_path):
     assert events[1]["duration_ms"] is not None
 
 
+def test_initiate_chat_records_memory_update_when_state_kwarg_mutates_in_place(tmp_path):
+    tracer = _tracer(tmp_path)
+    state = {"turns": 0}
+
+    def initiate_chat(recipient, message, *args, **kwargs):
+        kwargs["state"]["turns"] = 1
+        return SimpleNamespace(summary="done")
+
+    agent = SimpleNamespace(name="initiator", initiate_chat=initiate_chat, receive=lambda *a, **kw: None)
+    hook = ChronicleAutoGenHook(agent, tracer)
+
+    hook.initiate_chat(recipient=SimpleNamespace(name="responder"), message="hi", state=state)
+    tracer.close()
+
+    events = _read_events(tmp_path, tracer.run_id)
+    memory_events = [e for e in events if e["event_type"] == "memory_update"]
+    assert len(memory_events) == 1
+    assert memory_events[0]["data"]["memory_before"] == {"turns": 0}
+    assert memory_events[0]["data"]["memory_after"] == {"turns": 1}
+
+
 def test_hook_delegates_unknown_attributes_to_the_wrapped_agent(tmp_path):
     tracer = _tracer(tmp_path)
     agent = _make_agent()

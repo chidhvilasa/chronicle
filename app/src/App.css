@@ -1226,6 +1226,188 @@
   padding: 0 0.3rem;
 }
 
+/* --- Prompt inspector ------------------------------------------------------ */
+
+.prompt-inspector,
+.memory-inspector {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  height: 100%;
+  min-height: 0;
+}
+
+.prompt-list,
+.memory-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 160px;
+  overflow-y: auto;
+  border-bottom: 1px solid #e0e0e0;
+  flex-shrink: 0;
+}
+
+.prompt-row,
+.memory-row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  width: 100%;
+  text-align: left;
+  gap: 0.5rem;
+  padding: 0.3rem 0.5rem;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 0.7rem;
+  border-bottom: 1px solid #eee;
+}
+
+.prompt-row span,
+.memory-row span {
+  white-space: nowrap;
+}
+
+.prompt-row:hover,
+.memory-row:hover {
+  background-color: #f5f5f5;
+}
+
+.prompt-row.active,
+.memory-row.active {
+  background-color: #dde4ff;
+}
+
+.prompt-detail,
+.memory-detail {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.prompt-system-prompt {
+  margin-bottom: 0.6rem;
+  background-color: #f5f5f5;
+  border-radius: 4px;
+  padding: 0.4rem 0.6rem;
+}
+
+.prompt-system-prompt summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+.prompt-messages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.prompt-message {
+  border-radius: 4px;
+  padding: 0.4rem 0.6rem;
+  border-left: 4px solid #999;
+}
+
+.prompt-message-system {
+  background-color: #f0f0f0;
+  border-left-color: #999;
+}
+
+.prompt-message-user {
+  background-color: #eaf1ff;
+  border-left-color: #4285f4;
+}
+
+.prompt-message-assistant {
+  background-color: #eafbf0;
+  border-left-color: #2e9e4f;
+}
+
+.prompt-message-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  margin-bottom: 0.2rem;
+  text-transform: uppercase;
+  color: #777;
+}
+
+.prompt-compare {
+  margin-top: 0.6rem;
+  padding: 0.5rem;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+}
+
+.prompt-compare-list {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.prompt-diff-result {
+  margin-top: 0.6rem;
+}
+
+.prompt-diff-stats {
+  display: flex;
+  gap: 0.75rem;
+  font-size: 0.8rem;
+  margin-bottom: 0.4rem;
+}
+
+.prompt-diff-html .add {
+  background-color: rgba(46, 158, 79, 0.2);
+}
+
+.prompt-diff-html .del {
+  background-color: rgba(176, 0, 32, 0.2);
+  text-decoration: line-through;
+}
+
+.prompt-diff-html .same {
+  background-color: transparent;
+}
+
+/* --- Memory inspector ------------------------------------------------------- */
+
+.memory-key-row {
+  margin-bottom: 0.6rem;
+}
+
+.memory-key-added strong {
+  color: #2e9e4f;
+}
+
+.memory-key-removed strong {
+  color: #b00020;
+}
+
+.memory-key-changed strong {
+  color: #b8860b;
+}
+
+.memory-key-changed-values {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.memory-key-changed-values pre:first-child {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     color: #f6f6f6;
@@ -1398,5 +1580,45 @@
   .graph-node-count {
     background-color: #3a3a3a;
     color: #ccc;
+  }
+
+  .prompt-list,
+  .memory-timeline {
+    border-color: #4a4a4a;
+  }
+
+  .prompt-row:hover,
+  .memory-row:hover {
+    background-color: #3a3a3a;
+  }
+
+  .prompt-row.active,
+  .memory-row.active {
+    background-color: #394268;
+  }
+
+  .prompt-row,
+  .memory-row {
+    border-color: #3a3a3a;
+  }
+
+  .prompt-system-prompt {
+    background-color: #2a2a2a;
+  }
+
+  .prompt-message-system {
+    background-color: #2a2a2a;
+  }
+
+  .prompt-message-user {
+    background-color: #1f2a44;
+  }
+
+  .prompt-message-assistant {
+    background-color: #1c3324;
+  }
+
+  .prompt-compare {
+    border-color: #4a4a4a;
   }
 }

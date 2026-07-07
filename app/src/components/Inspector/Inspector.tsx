@@ -4,12 +4,16 @@ import { useAppStore, type InspectorTab } from "../../store/useAppStore";
 import type { Event } from "../../types";
 import { AgentInspector } from "./AgentInspector";
 import { EventInspector } from "./EventInspector";
+import { MemoryInspector } from "./MemoryInspector";
+import { PromptInspector } from "./PromptInspector";
 import { ToolInspector } from "./ToolInspector";
 
 const TABS: { id: InspectorTab; label: string }[] = [
   { id: "event", label: "Event" },
   { id: "agent", label: "Agent" },
   { id: "tools", label: "Tools" },
+  { id: "prompts", label: "Prompts" },
+  { id: "memory", label: "Memory" },
 ];
 
 /** Right panel: collapsible Event/Agent/Tools inspector for the selected run. */
@@ -84,6 +88,8 @@ export function Inspector() {
               onSelectTool={selectTool}
             />
           )}
+          {inspectorTab === "prompts" && <PromptInspector runId={selectedRunId} />}
+          {inspectorTab === "memory" && <MemoryInspector runId={selectedRunId} />}
         </div>
       )}
     </aside>

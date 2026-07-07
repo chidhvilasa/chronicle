@@ -6,8 +6,12 @@ import type {
   Event,
   ExecutionGraph,
   HealthStatus,
+  MemoryList,
   MetricsOverview,
   ModelMetrics,
+  PromptDetail,
+  PromptDiffResult,
+  PromptSummary,
   ReplayResponse,
   Run,
   RunMetrics,
@@ -86,6 +90,24 @@ export const chronicleApi = {
   listRunEvents: (runId: string): Promise<Event[]> => request(`/runs/${runId}/events`),
   getRunTimeline: (runId: string): Promise<Timeline> => request(`/runs/${runId}/timeline`),
   getRunGraph: (runId: string): Promise<ExecutionGraph> => request(`/runs/${runId}/graph`),
+  getRunPrompts: (runId: string): Promise<PromptSummary[]> => request(`/runs/${runId}/prompts`),
+  getRunPrompt: (runId: string, eventId: string): Promise<PromptDetail> =>
+    request(`/runs/${runId}/prompts/${eventId}`),
+  getPromptsDiff: (params: {
+    runIdA: string;
+    eventIdA: string;
+    runIdB: string;
+    eventIdB: string;
+  }): Promise<PromptDiffResult> => {
+    const query = new URLSearchParams({
+      run_id_a: params.runIdA,
+      event_id_a: params.eventIdA,
+      run_id_b: params.runIdB,
+      event_id_b: params.eventIdB,
+    });
+    return request(`/prompts/diff?${query.toString()}`);
+  },
+  getRunMemory: (runId: string): Promise<MemoryList> => request(`/runs/${runId}/memory`),
   deleteRun: (runId: string): Promise<void> => request(`/runs/${runId}`, { method: "DELETE" }),
   checkHealth: (): Promise<HealthStatus> => request("/health"),
   listRunSnapshots: (runId: string): Promise<SnapshotSummary[]> =>
