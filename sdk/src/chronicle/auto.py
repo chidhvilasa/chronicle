@@ -1,10 +1,10 @@
 """Zero-friction auto-instrumentation: `chronicle.instrument(obj)`.
 
-Detects which framework `obj` belongs to (LangGraph, OpenAI Agents SDK, or
-PydanticAI) and wires up the matching adapter automatically, starting the
-Chronicle server in the background if one isn't already running. No manual
-`ChronicleTracer`/adapter construction required — see `README.md`'s
-Quickstart.
+Detects which framework `obj` belongs to (LangGraph, OpenAI Agents SDK,
+PydanticAI, CrewAI, or AutoGen) and wires up the matching adapter
+automatically, starting the Chronicle server in the background if one isn't
+already running. No manual `ChronicleTracer`/adapter construction required —
+see `README.md`'s Quickstart.
 """
 
 from __future__ import annotations
@@ -15,17 +15,21 @@ import uuid
 from contextlib import contextmanager
 from typing import Any, Iterator, Literal
 
+from chronicle.adapters.autogen import ChronicleAutoGenHook
+from chronicle.adapters.crewai import ChronicleCrewAICallbackHandler
 from chronicle.adapters.langgraph import LangGraphAdapter
 from chronicle.adapters.openai_agents import ChronicleAgentHooks
 from chronicle.adapters.pydanticai import ChronicleMiddleware
 from chronicle.server_manager import ServerManager
 from chronicle.tracer import ChronicleTracer
 
-FrameworkName = Literal["langgraph", "openai_agents", "pydanticai", "unknown"]
+FrameworkName = Literal[
+    "langgraph", "openai_agents", "pydanticai", "crewai", "autogen", "unknown"
+]
 
 _UNKNOWN_FRAMEWORK_MESSAGE = (
     "Chronicle: detected unknown framework type. LangGraph, OpenAI Agents SDK, "
-    "and PydanticAI are supported. Manual adapter setup may be required."
+    "PydanticAI, CrewAI, and AutoGen are supported. Manual adapter setup may be required."
 )
 
 
@@ -33,10 +37,10 @@ def _detect_framework(obj: Any) -> FrameworkName:
     """Identifies which supported framework `obj` came from.
 
     Detection is by module path and class name only — it never imports
-    `langgraph`, `agents`, or `pydantic_ai` to do this, so calling
-    `instrument()` never raises `ImportError` for a framework that isn't
-    installed (and works against plain mock objects in tests, which don't
-    need the real frameworks installed either).
+    `langgraph`, `agents`, `pydantic_ai`, `crewai`, or `autogen` to do this,
+    so calling `instrument()` never raises `ImportError` for a framework
+    that isn't installed (and works against plain mock objects in tests,
+    which don't need the real frameworks installed either).
     """
     module_root = (type(obj).__module__ or "").split(".")[0]
     class_name = type(obj).__name__
@@ -47,6 +51,10 @@ def _detect_framework(obj: Any) -> FrameworkName:
         return "openai_agents"
     if module_root == "pydantic_ai" and class_name == "Agent":
         return "pydanticai"
+    if module_root == "crewai" and class_name == "Crew":
+        return "crewai"
+    if module_root == "autogen" and "Agent" in class_name:
+        return "autogen"
     return "unknown"
 
 
@@ -135,6 +143,18 @@ def _instrument_pydanticai(agent: Any, tracer: ChronicleTracer, agent_name: str)
     return ChronicleMiddleware(agent, tracer, agent_name=agent_name)
 
 
+def _instrument_crewai(crew: Any, tracer: ChronicleTracer, agent_name: str) -> Any:
+    handler = ChronicleCrewAICallbackHandler(tracer, agent_name=agent_name)
+    callbacks = list(getattr(crew, "callbacks", None) or [])
+    callbacks.append(handler)
+    crew.callbacks = callbacks
+    return crew
+
+
+def _instrument_autogen(agent: Any, tracer: ChronicleTracer, agent_name: str) -> Any:
+    return ChronicleAutoGenHook(agent, tracer, agent_name=agent_name)
+
+
 def _build(obj: Any, agent_name: str | None) -> tuple[Any, ChronicleTracer]:
     """Shared wiring logic behind both `instrument()` and `instrument_context()`."""
     tracer = ChronicleTracer()
@@ -147,6 +167,10 @@ def _build(obj: Any, agent_name: str | None) -> tuple[Any, ChronicleTracer]:
         result = _instrument_openai_agents(obj, tracer, resolved_name)
     elif framework == "pydanticai":
         result = _instrument_pydanticai(obj, tracer, resolved_name)
+    elif framework == "crewai":
+        result = _instrument_crewai(obj, tracer, resolved_name)
+    elif framework == "autogen":
+        result = _instrument_autogen(obj, tracer, resolved_name)
     else:
         print(_UNKNOWN_FRAMEWORK_MESSAGE)
         result = obj

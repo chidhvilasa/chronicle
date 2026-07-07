@@ -63,8 +63,9 @@ Open the Chronicle desktop app. Run your agent. That is it.
 | LangGraph | Supported |
 | OpenAI Agents SDK | Supported |
 | PydanticAI | Supported |
-| CrewAI | Coming in v0.4.0 |
-| AutoGen | Coming in v0.4.0 |
+| CrewAI | Supported |
+| AutoGen | Supported |
+| Semantic Kernel | Coming in v0.7.0 |
 
 ## Getting started (development)
 
