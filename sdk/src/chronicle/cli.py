@@ -10,6 +10,8 @@ import argparse
 import subprocess
 import sys
 
+import httpx
+
 from chronicle.server_manager import DEFAULT_HOST, DEFAULT_PORT, ServerManager
 from chronicle.testing.models import SuiteResult, TestResult
 from chronicle.testing.runner import ChronicleTestRunner
@@ -135,6 +137,79 @@ def _test_list(args: argparse.Namespace) -> int:
         return 0
 
 
+def _fetch_verify_result(client: httpx.Client, base_url: str, run_id: str) -> dict | None:
+    """Returns the parsed `/runs/{run_id}/verify` response, or `None` if the run doesn't exist."""
+    response = client.get(f"{base_url}/runs/{run_id}/verify")
+    if response.status_code == 404:
+        return None
+    response.raise_for_status()
+    return response.json()
+
+
+def _format_verify_result(result: dict) -> str:
+    if result["ok"]:
+        return f"{result['event_count']} events, hash chain intact"
+    lines = [f"{len(result['violations'])} issue(s) found:"]
+    for violation in result["violations"]:
+        lines.append(f"  - event '{violation['event_id']}': {violation['reason']}")
+    return "\n".join(lines)
+
+
+def _verify_all(client: httpx.Client, base_url: str) -> int:
+    try:
+        response = client.get(f"{base_url}/runs")
+        response.raise_for_status()
+        runs = response.json()
+    except httpx.HTTPError as exc:
+        print(f"Chronicle: {exc}")
+        return 1
+
+    if not runs:
+        print("Chronicle: no runs to verify.")
+        return 0
+
+    all_ok = True
+    for run in runs:
+        run_id = run["run_id"]
+        try:
+            result = _fetch_verify_result(client, base_url, run_id)
+        except httpx.HTTPError as exc:
+            print(f"[FAILED] {run_id}: {exc}")
+            all_ok = False
+            continue
+        ok = result is not None and result["ok"]
+        all_ok = all_ok and ok
+        summary = "run vanished mid-check" if result is None else _format_verify_result(result)
+        print(f"[{'OK' if ok else 'FAILED'}] {run_id}: {summary}")
+
+    print(f"\n{'All' if all_ok else 'Not all'} runs verified ({len(runs)} checked).")
+    return 0 if all_ok else 1
+
+
+def _verify_run(args: argparse.Namespace) -> int:
+    base_url = f"http://{args.host}:{args.port}"
+    with httpx.Client(timeout=10.0) as client:
+        if args.run_id == "all":
+            return _verify_all(client, base_url)
+
+        try:
+            result = _fetch_verify_result(client, base_url, args.run_id)
+        except httpx.HTTPError as exc:
+            print(f"Chronicle: {exc}")
+            return 1
+
+        if result is None:
+            print(f"Chronicle: run '{args.run_id}' was not found.")
+            return 2
+
+        if result["ok"]:
+            print(f"Chronicle: run '{args.run_id}' verified — {_format_verify_result(result)}.")
+            return 0
+
+        print(f"Chronicle: run '{args.run_id}' FAILED verification — {_format_verify_result(result)}")
+        return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="chronicle", description="Chronicle: the Chrome DevTools for AI agents."
@@ -159,6 +234,12 @@ def main(argv: list[str] | None = None) -> int:
 
     list_parser = test_subparsers.add_parser("list", help="List all stored tests with their last result")
     list_parser.set_defaults(func=_test_list)
+
+    verify_parser = subparsers.add_parser(
+        "verify", help="Verify a run's event hash chain hasn't been tampered with"
+    )
+    verify_parser.add_argument("run_id", help="Run ID to verify, or 'all' to verify every run")
+    verify_parser.set_defaults(func=_verify_run)
 
     args = parser.parse_args(argv)
     return int(args.func(args))

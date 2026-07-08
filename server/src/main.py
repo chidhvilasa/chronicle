@@ -20,6 +20,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from src import __version__
 from src.database import DEFAULT_DB_PATH, CorruptedDataError, Database
 from src.graph_builder import build_graph
+from src.integrity import verify_run_events
 from src.memory_builder import build_memory_snapshots
 from src.models import (
     BackfillResponse,
@@ -27,6 +28,7 @@ from src.models import (
     EventOut,
     GraphOut,
     HealthOut,
+    IntegrityViolationOut,
     MemoryListOut,
     MemorySnapshotOut,
     MetricsOverviewOut,
@@ -50,6 +52,7 @@ from src.models import (
     TimelineOut,
     ToolMetricsOut,
     TrendPointOut,
+    VerifyRunOut,
 )
 from src.prompt_diff import compute_prompt_diff
 from src.prompts import build_prompt_detail, build_prompt_summaries, prompt_text
@@ -342,6 +345,26 @@ async def list_run_events(run_id: str) -> list[EventOut]:
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' was not found")
     events = await app.state.db.list_events(run_id)
     return [EventOut(**event) for event in events]
+
+
+@app.get("/runs/{run_id}/verify", response_model=VerifyRunOut)
+async def verify_run(run_id: str) -> VerifyRunOut:
+    """Recomputes and checks the stored hash chain for a run's events (see
+    `src/integrity.py`). Used by `chronicle verify`, not the desktop app.
+    """
+    run = await app.state.db.get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' was not found")
+    events = await app.state.db.list_events_with_hashes(run_id)
+    result = verify_run_events(run_id, events)
+    return VerifyRunOut(
+        run_id=result.run_id,
+        ok=result.ok,
+        event_count=result.event_count,
+        violations=[
+            IntegrityViolationOut(event_id=v.event_id, reason=v.reason) for v in result.violations
+        ],
+    )
 
 
 @app.get("/runs/{run_id}/timeline", response_model=TimelineOut)

@@ -11,6 +11,8 @@ from typing import Any
 
 import aiosqlite
 
+from src import integrity
+
 DEFAULT_DB_PATH = Path.home() / ".chronicle" / "chronicle.db"
 
 
@@ -75,7 +77,9 @@ CREATE TABLE IF NOT EXISTS events (
     input_tokens INTEGER,
     output_tokens INTEGER,
     data TEXT NOT NULL DEFAULT '{}',
-    error TEXT
+    error TEXT,
+    event_hash TEXT NOT NULL DEFAULT '',
+    chain_hash TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS snapshots (
@@ -199,13 +203,29 @@ class Database:
         await self._conn.execute("PRAGMA encoding = 'UTF-8'")
         self._conn.text_factory = lambda b: b.decode("utf-8", errors="replace") if isinstance(b, bytes) else b
         await self._conn.executescript(_SCHEMA)
+        await self._migrate_schema()
         await self._conn.commit()
+
+    async def _migrate_schema(self) -> None:
+        """Adds columns to pre-existing tables that `CREATE TABLE IF NOT EXISTS` can't add.
+
+        `event_hash`/`chain_hash` were introduced after some databases may already
+        exist on disk without them; this brings any such database up to date in place.
+        """
+        cursor = await self._conn.execute("PRAGMA table_info(events)")
+        existing_columns = {row[1] for row in await cursor.fetchall()}
+        if "event_hash" not in existing_columns:
+            await self._conn.execute("ALTER TABLE events ADD COLUMN event_hash TEXT NOT NULL DEFAULT ''")
+        if "chain_hash" not in existing_columns:
+            await self._conn.execute("ALTER TABLE events ADD COLUMN chain_hash TEXT NOT NULL DEFAULT ''")
 
     async def close(self) -> None:
         await self._conn.close()
 
     async def insert_events(self, events: list[dict[str, Any]]) -> int:
-        """Insert a batch of events and refresh aggregate stats for each affected run."""
+        """Insert a batch of events, refresh aggregate stats, and recompute the hash chain
+        for each affected run.
+        """
         if not events:
             return 0
         await self._conn.executemany(
@@ -230,8 +250,72 @@ class Database:
         )
         for run_id in {e["run_id"] for e in events}:
             await self._refresh_run_aggregates(run_id)
+            await self._recompute_event_chain(run_id)
         await self._conn.commit()
         return len(events)
+
+    async def _recompute_event_chain(self, run_id: str) -> None:
+        """Recomputes `event_hash`/`chain_hash` for every event in `run_id`, in canonical
+        order (`timestamp ASC, event_id ASC`).
+
+        Recomputed from scratch (rather than incrementally extended) every time any event
+        for this run is inserted, the same way `_refresh_run_aggregates` recomputes run
+        aggregates from scratch: events can arrive out of order or be re-sent
+        (`INSERT OR REPLACE`), so an incremental update could leave a stale chain for
+        events after the inserted one. This mirrors the codebase's existing
+        recompute-from-source-of-truth pattern rather than introducing a new one.
+        """
+        cursor = await self._conn.execute(
+            "SELECT event_id, run_id, timestamp, event_type, agent_name, data FROM events "
+            "WHERE run_id = ? ORDER BY timestamp ASC, event_id ASC",
+            (run_id,),
+        )
+        rows = await cursor.fetchall()
+        events = [
+            {
+                "event_id": row["event_id"],
+                "run_id": row["run_id"],
+                "timestamp": row["timestamp"],
+                "event_type": row["event_type"],
+                "agent_name": row["agent_name"],
+                "data": _lenient_json_loads(row["data"]),
+            }
+            for row in rows
+        ]
+        chain = integrity.build_chain(events)
+        await self._conn.executemany(
+            "UPDATE events SET event_hash = ?, chain_hash = ? WHERE event_id = ?",
+            [
+                (event_hash, chain_hash, event["event_id"])
+                for event, (event_hash, chain_hash) in zip(events, chain)
+            ],
+        )
+
+    async def list_events_with_hashes(self, run_id: str) -> list[dict[str, Any]]:
+        """Lists a run's events in canonical chain order, including their stored
+        `event_hash`/`chain_hash` - used by `chronicle verify`, not exposed over the
+        regular events API.
+        """
+        cursor = await self._conn.execute(
+            "SELECT event_id, run_id, timestamp, event_type, agent_name, data, "
+            "event_hash, chain_hash FROM events WHERE run_id = ? "
+            "ORDER BY timestamp ASC, event_id ASC",
+            (run_id,),
+        )
+        rows = await cursor.fetchall()
+        return [
+            {
+                "event_id": row["event_id"],
+                "run_id": row["run_id"],
+                "timestamp": row["timestamp"],
+                "event_type": row["event_type"],
+                "agent_name": row["agent_name"],
+                "data": _lenient_json_loads(row["data"]),
+                "event_hash": row["event_hash"],
+                "chain_hash": row["chain_hash"],
+            }
+            for row in rows
+        ]
 
     async def _refresh_run_aggregates(self, run_id: str) -> None:
         cursor = await self._conn.execute(

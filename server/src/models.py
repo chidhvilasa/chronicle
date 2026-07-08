@@ -400,3 +400,15 @@ class TestResultOut(BaseModel):
     token_usage: dict[str, int | None] | None
     error_reason: str | None = None
     created_at: float
+
+
+class IntegrityViolationOut(BaseModel):
+    event_id: str
+    reason: str
+
+
+class VerifyRunOut(BaseModel):
+    run_id: str
+    ok: bool
+    event_count: int
+    violations: list[IntegrityViolationOut]
