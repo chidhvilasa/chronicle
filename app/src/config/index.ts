@@ -33,3 +33,6 @@ export const TEST_LIST_POLL_INTERVAL_MS = 5000;
 
 /** How often the Performance tab's stat cards poll `GET /metrics/overview`, in ms. */
 export const METRICS_POLL_INTERVAL_MS = 30000;
+
+/** How often ServerStatus polls `GET /health` to detect whether the Chronicle server is up, in ms. */
+export const SERVER_STATUS_POLL_INTERVAL_MS = 3000;

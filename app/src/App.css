@@ -1418,6 +1418,70 @@
   opacity: 0.7;
 }
 
+/* Server status onboarding overlay */
+
+.server-status-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 300;
+}
+
+.server-status-card {
+  background-color: #fff;
+  border-radius: 10px;
+  padding: 2rem;
+  max-width: 480px;
+  width: 90%;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+  text-align: center;
+}
+
+.server-status-card h1 {
+  font-size: 1.3rem;
+  margin: 0 0 0.75rem;
+}
+
+.server-status-card p {
+  color: #555;
+  font-size: 0.9rem;
+  margin: 0 0 1rem;
+}
+
+.server-status-card .code-block {
+  text-align: left;
+  margin: 0 0 0.75rem;
+  max-height: none;
+}
+
+.server-status-retry {
+  background-color: #396cd8;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 0.5rem 1.2rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  margin-bottom: 1rem;
+}
+
+.server-status-advanced {
+  text-align: left;
+  font-size: 0.85rem;
+}
+
+.server-status-advanced summary {
+  cursor: pointer;
+  color: #555;
+}
+
+.server-status-advanced .code-block {
+  margin-top: 0.5rem;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     color: #f6f6f6;
@@ -1630,5 +1694,14 @@
 
   .prompt-compare {
     border-color: #4a4a4a;
+  }
+
+  .server-status-card {
+    background-color: #2f2f2f;
+  }
+
+  .server-status-card p,
+  .server-status-advanced summary {
+    color: #ccc;
   }
 }
