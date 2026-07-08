@@ -13,6 +13,35 @@ import aiosqlite
 
 DEFAULT_DB_PATH = Path.home() / ".chronicle" / "chronicle.db"
 
+
+class CorruptedDataError(Exception):
+    """Raised when a stored JSON column can't be parsed back into JSON.
+
+    Normal writes always go through `json.dumps()`, so this should only ever be reached
+    for data written or altered outside the normal API (direct SQLite edits, disk
+    corruption, a bug in a future migration). Callers turn this into a clean 400
+    response rather than letting a raw `json.JSONDecodeError` propagate into a 500.
+    """
+
+
+def _safe_json_loads(raw: str, context: str) -> Any:
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError) as exc:
+        raise CorruptedDataError(f"Corrupted {context}: not valid JSON") from exc
+
+
+def _lenient_json_loads(raw: str) -> dict[str, Any]:
+    """Like `_safe_json_loads`, but for aggregate queries scanning every row in a table
+    (`get_tool_metrics`/`get_model_metrics`): one corrupted historical row shouldn't fail
+    the whole aggregation, so this returns `{}` instead of raising.
+    """
+    try:
+        value = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
 # Cost estimation constants for `run_metrics.estimated_cost_usd` and the
 # `/metrics/*` endpoints. These are flat per-token prices, not real
 # per-model billing - see KNOWN_ISSUES.md. Events whose `data["model"]`
@@ -162,6 +191,13 @@ class Database:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)  # type: ignore[union-attr]
         self._conn = await aiosqlite.connect(self.db_path)
         self._conn.row_factory = aiosqlite.Row
+        # Every write goes through json.dumps(), which always produces valid UTF-8, so
+        # a TEXT column should never actually contain invalid UTF-8 bytes in practice.
+        # This is a defensive backstop for the case where it somehow does anyway (a
+        # direct SQLite edit, disk corruption): replace the invalid bytes with U+FFFD
+        # rather than let sqlite3's default strict decoding raise and crash the request.
+        await self._conn.execute("PRAGMA encoding = 'UTF-8'")
+        self._conn.text_factory = lambda b: b.decode("utf-8", errors="replace") if isinstance(b, bytes) else b
         await self._conn.executescript(_SCHEMA)
         await self._conn.commit()
 
@@ -220,14 +256,20 @@ class Database:
         )
 
     async def insert_snapshots(self, snapshots: list[dict[str, Any]]) -> int:
-        """Insert a batch of state snapshots. Snapshots don't affect run aggregates."""
+        """Insert a batch of state snapshots. Snapshots don't affect run aggregates.
+
+        `graph_state`/`messages`/`tool_results`/`metadata` always arrive here already
+        parsed from a JSON request body by Pydantic, so they can never actually contain
+        a Python-level reference cycle (JSON text itself is acyclic). The try/except
+        below is defense-in-depth for internal callers that might one day construct a
+        snapshot dict directly (e.g. the replay engine): `json.dumps` raises `ValueError`
+        on a circular reference, which we turn into a clean, well-typed error instead of
+        letting it surface as an unhandled 500.
+        """
         if not snapshots:
             return 0
-        await self._conn.executemany(
-            "INSERT OR REPLACE INTO snapshots "
-            "(snapshot_id, run_id, event_id, step_index, timestamp, agent_name, "
-            "graph_state, messages, tool_results, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            [
+        try:
+            rows = [
                 (
                     s["snapshot_id"],
                     s["run_id"],
@@ -241,7 +283,14 @@ class Database:
                     json.dumps(s.get("metadata") or {}),
                 )
                 for s in snapshots
-            ],
+            ]
+        except (ValueError, TypeError) as exc:
+            raise CorruptedDataError(f"Snapshot state is not JSON-serializable: {exc}") from exc
+        await self._conn.executemany(
+            "INSERT OR REPLACE INTO snapshots "
+            "(snapshot_id, run_id, event_id, step_index, timestamp, agent_name, "
+            "graph_state, messages, tool_results, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            rows,
         )
         await self._conn.commit()
         return len(snapshots)
@@ -550,7 +599,7 @@ class Database:
 
         by_tool: dict[str, dict[str, Any]] = {}
         for row in rows:
-            data = json.loads(row["data"])
+            data = _lenient_json_loads(row["data"])
             tool_name = data.get("tool_name") or "unknown"
             bucket = by_tool.setdefault(
                 tool_name,
@@ -586,7 +635,7 @@ class Database:
 
         by_model: dict[str, dict[str, Any]] = {}
         for row in rows:
-            data = json.loads(row["data"])
+            data = _lenient_json_loads(row["data"])
             model_name = data.get("model") or "unknown"
             bucket = by_model.setdefault(
                 model_name,
@@ -762,7 +811,7 @@ def _row_to_run(row: aiosqlite.Row) -> dict[str, Any]:
         "total_tokens": row["total_tokens"],
         "total_cost_usd": row["total_cost_usd"],
         "status": row["status"],
-        "metadata": json.loads(row["metadata"]),
+        "metadata": _safe_json_loads(row["metadata"], "run metadata"),
     }
 
 
@@ -776,7 +825,7 @@ def _row_to_event(row: aiosqlite.Row) -> dict[str, Any]:
         "duration_ms": row["duration_ms"],
         "input_tokens": row["input_tokens"],
         "output_tokens": row["output_tokens"],
-        "data": json.loads(row["data"]),
+        "data": _safe_json_loads(row["data"], "event data"),
         "error": row["error"],
     }
 
@@ -799,10 +848,10 @@ def _row_to_snapshot(row: aiosqlite.Row) -> dict[str, Any]:
         "step_index": row["step_index"],
         "timestamp": row["timestamp"],
         "agent_name": row["agent_name"],
-        "graph_state": json.loads(row["graph_state"]),
-        "messages": json.loads(row["messages"]),
-        "tool_results": json.loads(row["tool_results"]),
-        "metadata": json.loads(row["metadata"]),
+        "graph_state": _safe_json_loads(row["graph_state"], "snapshot graph_state"),
+        "messages": _safe_json_loads(row["messages"], "snapshot messages"),
+        "tool_results": _safe_json_loads(row["tool_results"], "snapshot tool_results"),
+        "metadata": _safe_json_loads(row["metadata"], "snapshot metadata"),
     }
 
 
@@ -812,7 +861,7 @@ def _row_to_test(row: aiosqlite.Row) -> dict[str, Any]:
         "name": row["name"],
         "source_run_id": row["source_run_id"],
         "source_snapshot_id": row["source_snapshot_id"],
-        "assertions": json.loads(row["assertions"]),
+        "assertions": _safe_json_loads(row["assertions"], "test assertions"),
         "created_at": row["created_at"],
         "last_run_at": row["last_run_at"],
         "last_result": row["last_result"],
@@ -826,9 +875,9 @@ def _row_to_test_result(row: aiosqlite.Row) -> dict[str, Any]:
         "replay_run_id": row["replay_run_id"],
         "status": row["status"],
         "passed": bool(row["passed"]),
-        "assertion_results": json.loads(row["assertion_results"]),
+        "assertion_results": _safe_json_loads(row["assertion_results"], "test_result assertion_results"),
         "duration_ms": row["duration_ms"],
-        "token_usage": json.loads(row["token_usage"]) if row["token_usage"] else None,
+        "token_usage": _safe_json_loads(row["token_usage"], "test_result token_usage") if row["token_usage"] else None,
         "error_reason": row["error_reason"],
         "created_at": row["created_at"],
     }

@@ -220,7 +220,7 @@ def _extract_completion_text(response: Any) -> str:
     return "\n".join(texts)
 
 
-def _json_safe(value: Any) -> tuple[Any, bool]:
+def _json_safe(value: Any, _seen: frozenset[int] | None = None) -> tuple[Any, bool]:
     """Recursively converts `value` into something JSON-serializable.
 
     Dicts/lists/tuples are walked recursively; strings, numbers, bools, and
@@ -228,21 +228,34 @@ def _json_safe(value: Any) -> tuple[Any, bool]:
     datetimes, custom classes, ...) is converted via `str()`. Returns
     `(safe_value, encountered_non_serializable)` so callers can flag a
     `_serialization_warning` without needing a second pass.
-    """
-    if isinstance(value, dict):
-        safe_dict: dict[str, Any] = {}
-        warned = False
-        for key, val in value.items():
-            safe_val, val_warned = _json_safe(val)
-            safe_dict[str(key)] = safe_val
-            warned = warned or val_warned
-        return safe_dict, warned
 
-    if isinstance(value, (list, tuple)):
+    `_seen` tracks the `id()`s of containers currently being walked on the
+    current recursion path (not a global visited set, so sibling branches that
+    happen to share a sub-object aren't falsely flagged). Live graph state can
+    contain genuine reference cycles - e.g. a LangChain message object with a
+    `.parent`/back-reference - which would otherwise blow the stack with
+    infinite recursion before this ever reaches JSON encoding. When a cycle is
+    detected, the repeated container is replaced with a marker string instead
+    of being walked again.
+    """
+    if isinstance(value, (dict, list, tuple)):
+        if _seen is not None and id(value) in _seen:
+            return "<circular reference>", True
+        seen = (_seen or frozenset()) | {id(value)}
+
+        if isinstance(value, dict):
+            safe_dict: dict[str, Any] = {}
+            warned = False
+            for key, val in value.items():
+                safe_val, val_warned = _json_safe(val, seen)
+                safe_dict[str(key)] = safe_val
+                warned = warned or val_warned
+            return safe_dict, warned
+
         safe_list: list[Any] = []
         warned = False
         for item in value:
-            safe_item, item_warned = _json_safe(item)
+            safe_item, item_warned = _json_safe(item, seen)
             safe_list.append(safe_item)
             warned = warned or item_warned
         return safe_list, warned

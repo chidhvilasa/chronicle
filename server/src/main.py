@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from src import __version__
-from src.database import DEFAULT_DB_PATH, Database
+from src.database import DEFAULT_DB_PATH, CorruptedDataError, Database
 from src.graph_builder import build_graph
 from src.memory_builder import build_memory_snapshots
 from src.models import (
@@ -144,6 +144,15 @@ async def recursion_error_handler(request: Request, exc: RecursionError) -> JSON
     return JSONResponse(
         status_code=400,
         content={"error": "bad_request", "detail": "Request body is too deeply nested to parse."},
+    )
+
+
+@app.exception_handler(CorruptedDataError)
+async def corrupted_data_error_handler(request: Request, exc: CorruptedDataError) -> JSONResponse:
+    """Turns a corrupted stored JSON column into a clean 400 instead of an unhandled 500."""
+    return JSONResponse(
+        status_code=400,
+        content={"error": "bad_request", "detail": str(exc)},
     )
 
 
