@@ -1,7 +1,16 @@
+import time
+
 import pytest
 from fastapi.testclient import TestClient
 
 from src.main import app
+
+# `POST /events` now rejects timestamps outside a window around real wall-clock time
+# (see security hardening in src/validation.py) - tests historically used small
+# relative numbers like 1000.0/1001.0 as stand-ins for "some time", so this rebases
+# every such literal onto real current time while preserving the relative deltas
+# between them (e.g. timestamp=1001.0 is always exactly 1 second after timestamp=1000.0).
+_BASE_TIME = time.time() - 1000.0
 
 
 @pytest.fixture
@@ -15,7 +24,7 @@ def _event(event_id="evt-1", run_id="run-1", timestamp=1000.0, event_type="tool_
     event = {
         "event_id": event_id,
         "run_id": run_id,
-        "timestamp": timestamp,
+        "timestamp": _BASE_TIME + timestamp,
         "event_type": event_type,
         "agent_name": "agent-a",
         "data": {"tool_name": "search"},

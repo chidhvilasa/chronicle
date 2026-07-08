@@ -11,6 +11,16 @@ Chaos only ever applies to tool calls, never LLM calls: injecting LLM
 failures would make a run unreplayable (Chronicle's replay engine depends on
 being able to deterministically re-invoke the same graph) and would defeat
 the purpose of using Chronicle to observe what actually happened.
+
+SECURITY NOTE: every chaos decision below is made with the stdlib `random`
+module's default (Mersenne Twister) generator via plain `random.random()`
+calls, which is **not** cryptographically secure - its output is predictable
+if an attacker can observe enough samples or knows the seed. This is
+intentional and acceptable here: chaos configuration only ever affects a
+local, opt-in test/debug run (never a production security control, access
+decision, or anything cryptographic), so predictability has no security
+consequence. Do not reuse this module's RNG for anything security-sensitive
+(tokens, nonces, secrets) - use `secrets`/`os.urandom` for that instead.
 """
 
 from __future__ import annotations

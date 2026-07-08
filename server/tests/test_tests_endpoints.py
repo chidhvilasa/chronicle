@@ -3,12 +3,17 @@ GET /tests/{id}/history, and POST /tests/{id}/run.
 """
 
 import sys
+import time
 import types
 
 import pytest
 from fastapi.testclient import TestClient
 
 from src.main import app
+
+# See test_endpoints.py's _BASE_TIME comment: rebases small relative-offset test
+# timestamps onto real wall-clock time so they pass POST /events' timestamp-window check.
+_BASE_TIME = time.time() - 1000.0
 
 
 @pytest.fixture
@@ -47,7 +52,7 @@ def _event(event_id="evt-1", run_id="run-1", timestamp=1000.0, event_type="tool_
     event = {
         "event_id": event_id,
         "run_id": run_id,
-        "timestamp": timestamp,
+        "timestamp": _BASE_TIME + timestamp,
         "event_type": event_type,
         "agent_name": "agent-a",
         "data": {},

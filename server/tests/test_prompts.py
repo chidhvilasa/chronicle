@@ -1,3 +1,5 @@
+import time
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -150,7 +152,7 @@ def test_get_run_prompts_returns_summaries_without_message_content(client):
             {
                 "event_id": "e1",
                 "run_id": "run-1",
-                "timestamp": 1000.0,
+                "timestamp": time.time(),
                 "event_type": "llm_call",
                 "agent_name": "agent-a",
                 "data": {"prompt": "hello", "completion": "hi"},
@@ -181,7 +183,7 @@ def test_get_run_prompt_detail_returns_full_content(client):
             {
                 "event_id": "e1",
                 "run_id": "run-1",
-                "timestamp": 1000.0,
+                "timestamp": time.time(),
                 "event_type": "llm_call",
                 "agent_name": "agent-a",
                 "data": {"prompt": "hello", "completion": "hi"},
@@ -205,7 +207,7 @@ def test_get_run_prompt_detail_404_for_missing_event(client):
             {
                 "event_id": "e1",
                 "run_id": "run-1",
-                "timestamp": 1000.0,
+                "timestamp": time.time(),
                 "event_type": "llm_call",
                 "agent_name": "agent-a",
                 "data": {},
@@ -226,7 +228,7 @@ def test_get_prompts_diff_endpoint_computes_diff_across_runs(client):
             {
                 "event_id": "e1",
                 "run_id": "run-a",
-                "timestamp": 1000.0,
+                "timestamp": time.time(),
                 "event_type": "llm_call",
                 "agent_name": "agent-a",
                 "data": {"prompt": "hello world"},
@@ -242,7 +244,7 @@ def test_get_prompts_diff_endpoint_computes_diff_across_runs(client):
             {
                 "event_id": "e2",
                 "run_id": "run-b",
-                "timestamp": 1000.0,
+                "timestamp": time.time(),
                 "event_type": "llm_call",
                 "agent_name": "agent-a",
                 "data": {"prompt": "hello there"},

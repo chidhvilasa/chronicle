@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import time
 import uuid
@@ -55,6 +56,13 @@ from src.prompts import build_prompt_detail, build_prompt_summaries, prompt_text
 from src.registry import GraphRegistrationError, GraphRegistry
 from src.replay import ReplayEngine
 from src.timeline import build_timeline
+from src.validation import (
+    MAX_EVENT_PAYLOAD_BYTES,
+    MAX_EVENTS_PER_REQUEST,
+    MAX_JSON_DEPTH,
+    json_depth,
+    validate_timestamp,
+)
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 7823
@@ -90,6 +98,8 @@ def _status_label(status_code: int) -> str:
     return {
         400: "bad_request",
         404: "not_found",
+        409: "conflict",
+        413: "payload_too_large",
         422: "validation_error",
         500: "internal_error",
     }.get(status_code, "error")
@@ -122,6 +132,21 @@ async def validation_exception_handler(
     )
 
 
+@app.exception_handler(RecursionError)
+async def recursion_error_handler(request: Request, exc: RecursionError) -> JSONResponse:
+    """Converts a pathologically-nested JSON body into a clean 400 instead of a 500.
+
+    Python's stdlib `json` module recurses per nesting level while parsing, so a body
+    nested deep enough can raise `RecursionError` *during FastAPI's own request-body
+    parsing*, before any of our own depth checks (see `src/validation.json_depth`) ever
+    run. This is the defense-in-depth backstop for that case specifically.
+    """
+    return JSONResponse(
+        status_code=400,
+        content={"error": "bad_request", "detail": "Request body is too deeply nested to parse."},
+    )
+
+
 @app.get("/health", response_model=HealthOut)
 async def health() -> HealthOut:
     return HealthOut(status="ok", version=__version__)
@@ -138,8 +163,48 @@ async def _compute_metrics_if_complete(db: Database, run_id: str) -> None:
         await db.compute_run_metrics(run_id)
 
 
+def _validate_incoming_events(events: list[EventIn]) -> None:
+    """Enforces payload-size, nesting-depth, and timestamp-window limits on `POST /events`.
+
+    Raises `HTTPException` (413 for size limits, 400 for depth/timestamp) on the first
+    violation found; called before any database work so a rejected batch never touches
+    storage.
+    """
+    if len(events) > MAX_EVENTS_PER_REQUEST:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Too many events in one request: {len(events)} (max {MAX_EVENTS_PER_REQUEST}).",
+        )
+
+    now = time.time()
+    for event in events:
+        payload_bytes = len(json.dumps(event.data, default=str).encode("utf-8"))
+        if payload_bytes > MAX_EVENT_PAYLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    f"Event '{event.event_id}' payload is {payload_bytes} bytes "
+                    f"(max {MAX_EVENT_PAYLOAD_BYTES})."
+                ),
+            )
+
+        depth = json_depth(event.data)
+        if depth > MAX_JSON_DEPTH:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Event '{event.event_id}' data is nested {depth} levels deep (max {MAX_JSON_DEPTH}).",
+            )
+
+        timestamp_error = validate_timestamp(event.timestamp, now=now)
+        if timestamp_error is not None:
+            raise HTTPException(
+                status_code=400, detail=f"Event '{event.event_id}' rejected: {timestamp_error}."
+            )
+
+
 @app.post("/events")
 async def create_events(events: list[EventIn], background_tasks: BackgroundTasks) -> dict[str, int]:
+    _validate_incoming_events(events)
     count = await app.state.db.insert_events([event.to_row() for event in events])
     for run_id in {event.run_id for event in events}:
         background_tasks.add_task(_compute_metrics_if_complete, app.state.db, run_id)
@@ -166,6 +231,35 @@ async def list_registered_graphs() -> list[str]:
     return app.state.registry.list_names()
 
 
+MAX_REPLAY_DEPTH = 3
+
+
+async def _source_replay_depth(db: Database, source_run_id: str) -> int:
+    """How many replay levels deep `source_run_id` already is (0 for an original run).
+
+    Falls back to depth 1 for a replay run recorded before `replay_depth` existed in its
+    metadata, rather than treating it as depth 0 — erring toward the stricter, safer
+    assumption for old data instead of silently allowing unlimited further replay depth.
+    """
+    source_run = await db.get_run(source_run_id)
+    if source_run is None:
+        return 0
+    metadata = source_run.get("metadata") or {}
+    if metadata.get("is_replay") is not True:
+        return 0
+    depth = metadata.get("replay_depth")
+    return depth if isinstance(depth, int) else 1
+
+
+def _require_replay_depth_ok(source_depth: int) -> None:
+    """Rejects starting a new replay once its source is already at `MAX_REPLAY_DEPTH`
+    (i.e. this would create a replay-of-a-replay-of-a-replay-of-a-replay), preventing
+    unbounded replay chains.
+    """
+    if source_depth >= MAX_REPLAY_DEPTH:
+        raise HTTPException(status_code=400, detail="Maximum replay depth reached.")
+
+
 @app.post("/replay", response_model=ReplayResponse)
 async def replay(request: ReplayRequest, background_tasks: BackgroundTasks) -> ReplayResponse:
     graph = app.state.registry.get_active()
@@ -179,6 +273,9 @@ async def replay(request: ReplayRequest, background_tasks: BackgroundTasks) -> R
     if snapshot is None:
         raise HTTPException(status_code=404, detail=f"Snapshot '{request.snapshot_id}' was not found")
 
+    source_depth = await _source_replay_depth(app.state.db, request.run_id)
+    _require_replay_depth_ok(source_depth)
+
     new_run_id = str(uuid.uuid4())
     engine = ReplayEngine(db=app.state.db, graph=graph)
     background_tasks.add_task(
@@ -187,7 +284,7 @@ async def replay(request: ReplayRequest, background_tasks: BackgroundTasks) -> R
         request.modifications,
         new_run_id,
         request.run_id,
-        extra_metadata=request.metadata,
+        extra_metadata={**request.metadata, "replay_depth": source_depth + 1},
     )
     return ReplayResponse(run_id=new_run_id)
 
@@ -494,6 +591,9 @@ async def run_test(test_id: str) -> TestResultOut:
     if snapshot is None:
         raise HTTPException(status_code=404, detail=f"Snapshot '{snapshot_id}' was not found")
 
+    source_depth = await _source_replay_depth(app.state.db, test["source_run_id"])
+    _require_replay_depth_ok(source_depth)
+
     replay_run_id = str(uuid.uuid4())
     engine = ReplayEngine(db=app.state.db, graph=graph)
     await engine.start_replay(
@@ -501,7 +601,11 @@ async def run_test(test_id: str) -> TestResultOut:
         {},
         replay_run_id,
         test["source_run_id"],
-        extra_metadata={"triggered_by": "test", "test_id": test_id},
+        extra_metadata={
+            "triggered_by": "test",
+            "test_id": test_id,
+            "replay_depth": source_depth + 1,
+        },
     )
 
     replay_run = await app.state.db.get_run(replay_run_id)

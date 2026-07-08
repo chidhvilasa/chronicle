@@ -1,5 +1,6 @@
 import json
 import sqlite3
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -121,7 +122,7 @@ def test_delete_run_also_deletes_its_snapshots(tmp_path, monkeypatch):
             {
                 "event_id": "evt-1",
                 "run_id": "run-1",
-                "timestamp": 1000.0,
+                "timestamp": time.time(),
                 "event_type": "tool_call",
                 "agent_name": "agent-a",
                 "data": {},

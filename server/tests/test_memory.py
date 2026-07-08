@@ -1,3 +1,5 @@
+import time
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -116,7 +118,7 @@ def test_get_run_memory_returns_snapshots(client):
             {
                 "event_id": "e1",
                 "run_id": "run-1",
-                "timestamp": 1000.0,
+                "timestamp": time.time(),
                 "event_type": "memory_update",
                 "agent_name": "agent-a",
                 "data": {"memory_before": {"a": 1}, "memory_after": {"a": 1, "b": 2}},
@@ -141,7 +143,7 @@ def test_get_run_memory_returns_message_when_empty(client):
             {
                 "event_id": "e1",
                 "run_id": "run-1",
-                "timestamp": 1000.0,
+                "timestamp": time.time(),
                 "event_type": "tool_call",
                 "agent_name": "agent-a",
                 "data": {},

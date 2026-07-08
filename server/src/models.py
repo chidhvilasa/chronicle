@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
+from src.validation import clamp_duration_ms, clamp_int32
+
 EventTypeLiteral = Literal[
     "tool_call", "llm_call", "agent_message", "memory_update", "error", "retry"
 ]
@@ -31,16 +33,22 @@ class EventIn(BaseModel):
     error: str | None = None
 
     def to_row(self) -> dict[str, Any]:
-        """Flatten into the column shape `Database.insert_events` expects."""
+        """Flatten into the column shape `Database.insert_events` expects.
+
+        Numeric fields are clamped to a signed 32-bit range here — the single place
+        every event passes through on its way to SQLite — so a malformed or
+        adversarial token count/duration can never reach storage or downstream
+        consumers (the app's JS numbers, chart libraries, etc.) unbounded.
+        """
         return {
             "event_id": self.event_id,
             "run_id": self.run_id,
             "timestamp": self.timestamp,
             "event_type": self.event_type,
             "agent_name": self.agent_name,
-            "duration_ms": self.duration_ms,
-            "input_tokens": self.token_usage.input_tokens if self.token_usage else None,
-            "output_tokens": self.token_usage.output_tokens if self.token_usage else None,
+            "duration_ms": clamp_duration_ms(self.duration_ms),
+            "input_tokens": clamp_int32(self.token_usage.input_tokens if self.token_usage else None),
+            "output_tokens": clamp_int32(self.token_usage.output_tokens if self.token_usage else None),
             "data": self.data,
             "error": self.error,
         }

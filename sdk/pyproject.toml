@@ -11,7 +11,10 @@ requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "chidhvilasa" }]
 dependencies = [
-    "httpx>=0.27.0",
+    "httpx>=0.28.0",
+    # Transitive via httpx/httpcore, pinned explicitly: h11 < 0.16.0 has a request-
+    # smuggling vulnerability (CVE-2025-43859 / GHSA-vqfr-h8mv-ghfj) - see SECURITY_AUDIT.md.
+    "h11>=0.16.0",
 ]
 
 [project.optional-dependencies]
