@@ -90,7 +90,7 @@ def test_verify_run_events_passes_for_an_untampered_chain():
         {"event_id": "e1", "run_id": "r1", "timestamp": 1.0, "event_type": "tool_call", "data": {}},
         {"event_id": "e2", "run_id": "r1", "timestamp": 2.0, "event_type": "tool_call", "data": {}},
     ]
-    for event, (event_hash, chain_hash) in zip(events, integrity.build_chain(events)):
+    for event, (event_hash, chain_hash) in zip(events, integrity.build_chain(events), strict=True):
         event["event_hash"] = event_hash
         event["chain_hash"] = chain_hash
 
@@ -105,7 +105,7 @@ def test_verify_run_events_detects_a_modified_event():
         {"event_id": "e1", "run_id": "r1", "timestamp": 1.0, "event_type": "tool_call", "data": {"n": 1}},
         {"event_id": "e2", "run_id": "r1", "timestamp": 2.0, "event_type": "tool_call", "data": {"n": 2}},
     ]
-    for event, (event_hash, chain_hash) in zip(events, integrity.build_chain(events)):
+    for event, (event_hash, chain_hash) in zip(events, integrity.build_chain(events), strict=True):
         event["event_hash"] = event_hash
         event["chain_hash"] = chain_hash
 
@@ -123,7 +123,7 @@ def test_verify_run_events_detects_a_deleted_event_via_broken_chain():
         {"event_id": "e2", "run_id": "r1", "timestamp": 2.0, "event_type": "tool_call", "data": {}},
         {"event_id": "e3", "run_id": "r1", "timestamp": 3.0, "event_type": "tool_call", "data": {}},
     ]
-    for event, (event_hash, chain_hash) in zip(events, integrity.build_chain(events)):
+    for event, (event_hash, chain_hash) in zip(events, integrity.build_chain(events), strict=True):
         event["event_hash"] = event_hash
         event["chain_hash"] = chain_hash
 

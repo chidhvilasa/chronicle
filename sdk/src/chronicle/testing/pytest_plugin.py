@@ -11,6 +11,8 @@ picked up automatically once `chronicle-sdk` is installed — no
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import pytest
 
 from chronicle.testing.models import TestResult
@@ -30,6 +32,6 @@ class ChronicleTestFixture:
 
 
 @pytest.fixture
-def chronicle_test() -> ChronicleTestFixture:
+def chronicle_test() -> Iterator[ChronicleTestFixture]:
     with ChronicleTestRunner() as runner:
         yield ChronicleTestFixture(runner)

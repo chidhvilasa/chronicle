@@ -10,6 +10,7 @@ server) running first.
 from __future__ import annotations
 
 import atexit
+import contextlib
 import logging
 import os
 import signal
@@ -128,10 +129,8 @@ class ServerManager:
         pid = self._read_pid_file()
         if pid is None:
             return False
-        try:
+        with contextlib.suppress(ProcessLookupError, OSError):
             os.kill(pid, signal.SIGTERM)
-        except (ProcessLookupError, OSError):
-            pass
         self._clear_pid_file()
         return True
 
@@ -154,7 +153,5 @@ class ServerManager:
             return None
 
     def _clear_pid_file(self) -> None:
-        try:
+        with contextlib.suppress(OSError):  # pragma: no cover - defensive
             PID_FILE.unlink(missing_ok=True)
-        except OSError:  # pragma: no cover - defensive
-            pass

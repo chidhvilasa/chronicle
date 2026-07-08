@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as echarts from "echarts";
 import type {
   CustomSeriesRenderItemAPI,
@@ -153,18 +153,18 @@ export function TimelineChart({
   const [hovered, setHovered] = useState<HoveredSegment | null>(null);
   const hideTimeoutRef = useRef<number | null>(null);
 
-  function cancelHide() {
+  const cancelHide = useCallback(() => {
     if (hideTimeoutRef.current !== null) {
       window.clearTimeout(hideTimeoutRef.current);
       hideTimeoutRef.current = null;
     }
-  }
+  }, []);
 
   /** Delayed so the cursor can travel from the segment to the floating button without it vanishing. */
-  function scheduleHide() {
+  const scheduleHide = useCallback(() => {
     cancelHide();
     hideTimeoutRef.current = window.setTimeout(() => setHovered(null), 250);
-  }
+  }, [cancelHide]);
 
   useEffect(() => {
     if (containerRef.current === null) return;
@@ -201,7 +201,7 @@ export function TimelineChart({
       chart.dispose();
       chartRef.current = null;
     };
-  }, []);
+  }, [cancelHide, scheduleHide]);
 
   useEffect(() => {
     const chart = chartRef.current;

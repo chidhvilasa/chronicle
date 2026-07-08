@@ -7,9 +7,10 @@ import json
 import os
 import time
 import uuid
+from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator
+from typing import Any
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -23,9 +24,13 @@ from src.graph_builder import build_graph
 from src.integrity import verify_run_events
 from src.memory_builder import build_memory_snapshots
 from src.models import (
+    AssertionResultOut,
     BackfillResponse,
     EventIn,
     EventOut,
+    GraphEdgeOut,
+    GraphMetadataOut,
+    GraphNodeOut,
     GraphOut,
     HealthOut,
     IntegrityViolationOut,
@@ -49,6 +54,7 @@ from src.models import (
     TestIn,
     TestOut,
     TestResultOut,
+    TimelineLaneOut,
     TimelineOut,
     ToolMetricsOut,
     TrendPointOut,
@@ -108,7 +114,7 @@ def _status_label(status_code: int) -> str:
     }.get(status_code, "error")
 
 
-def _format_validation_errors(errors: list[dict[str, Any]]) -> str:
+def _format_validation_errors(errors: Sequence[dict[str, Any]]) -> str:
     messages = []
     for err in errors:
         loc = ".".join(str(part) for part in err.get("loc", []) if part != "body")
@@ -373,7 +379,8 @@ async def get_run_timeline(run_id: str) -> TimelineOut:
     if run is None:
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' was not found")
     events = await app.state.db.list_events(run_id)
-    return TimelineOut(run_id=run_id, lanes=build_timeline(events))
+    lanes = [TimelineLaneOut.model_validate(lane) for lane in build_timeline(events)]
+    return TimelineOut(run_id=run_id, lanes=lanes)
 
 
 @app.get("/runs/{run_id}/graph", response_model=GraphOut)
@@ -383,7 +390,12 @@ async def get_run_graph(run_id: str) -> GraphOut:
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' was not found")
     events = await app.state.db.list_events(run_id)
     graph = build_graph(events)
-    return GraphOut(run_id=run_id, nodes=graph["nodes"], edges=graph["edges"], metadata=graph["metadata"])
+    return GraphOut(
+        run_id=run_id,
+        nodes=[GraphNodeOut.model_validate(node) for node in graph["nodes"]],
+        edges=[GraphEdgeOut.model_validate(edge) for edge in graph["edges"]],
+        metadata=GraphMetadataOut.model_validate(graph["metadata"]),
+    )
 
 
 @app.get("/runs/{run_id}/prompts", response_model=list[PromptSummaryOut])
@@ -648,7 +660,11 @@ async def run_test(test_id: str) -> TestResultOut:
     else:
         try:
             from chronicle.testing.models import ChronicleAssertion
-            from chronicle.testing.runner import evaluate_assertion, total_duration_ms, total_token_usage
+            from chronicle.testing.runner import (
+                evaluate_assertion,
+                total_duration_ms,
+                total_token_usage,
+            )
         except ImportError:
             result = _error_test_result(
                 test_id, replay_run_id, "chronicle-sdk is not installed; cannot evaluate assertions"
@@ -666,13 +682,13 @@ async def run_test(test_id: str) -> TestResultOut:
                 status="pass" if overall_passed else "fail",
                 passed=overall_passed,
                 assertion_results=[
-                    {
-                        "assertion_id": r.assertion_id,
-                        "assertion_type": r.assertion_type,
-                        "passed": r.passed,
-                        "reason": r.reason,
-                        "on_fail": r.on_fail,
-                    }
+                    AssertionResultOut(
+                        assertion_id=r.assertion_id,
+                        assertion_type=r.assertion_type,
+                        passed=r.passed,
+                        reason=r.reason,
+                        on_fail=r.on_fail,
+                    )
                     for r in assertion_results
                 ],
                 duration_ms=total_duration_ms(events),

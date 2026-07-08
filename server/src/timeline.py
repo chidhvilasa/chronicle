@@ -98,7 +98,7 @@ def _with_waiting_segments(segments: list[TimelineSegment]) -> list[TimelineSegm
 
     ordered = sorted(segments, key=lambda s: s["start_time_ms"])
     result: list[TimelineSegment] = [ordered[0]]
-    for prev, current in zip(ordered, ordered[1:]):
+    for prev, current in zip(ordered, ordered[1:]):  # noqa: B905 - deliberately mismatched lengths (pairwise iteration)
         prev_end = prev["start_time_ms"] + prev["duration_ms"]
         gap = current["start_time_ms"] - prev_end
         if gap > _MIN_GAP_MS:

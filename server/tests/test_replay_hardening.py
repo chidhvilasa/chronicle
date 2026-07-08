@@ -7,12 +7,10 @@ states that can't be produced through the (fully validated) public endpoints,
 such as on-disk corruption or a pre-existing row from an older/buggy version.
 """
 
-import json
 import sqlite3
 import sys
 import time
 import types
-import uuid
 
 import pytest
 from fastapi.testclient import TestClient
@@ -330,7 +328,7 @@ def test_event_with_invalid_utf8_bytes_in_data_column_is_replaced_not_crashed(cl
 
 
 async def test_replay_depth_limit_blocks_a_fourth_generation_replay(client, mock_graph, db_path):
-    graph = _register_mock_graph(client, mock_graph)
+    _register_mock_graph(client, mock_graph)
     client.post("/events", json=[_event(run_id="run-gen0")])
     _post_snapshot(client, run_id="run-gen0")
 

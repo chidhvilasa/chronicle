@@ -27,8 +27,9 @@ from __future__ import annotations
 
 import random
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, TypeVar
+from typing import Any, TypeVar
 
 T = TypeVar("T")
 
@@ -152,6 +153,6 @@ class ChaosMixin:
         result = call()
 
         if self.should_malform():
-            return self.config.malformed_response_value  # type: ignore[return-value]
+            return self.config.malformed_response_value
 
         return result

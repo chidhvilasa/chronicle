@@ -291,7 +291,7 @@ def _build_adjacency(
 def _has_cycle(adjacency: dict[str, list[str]]) -> bool:
     """Standard directed-graph cycle detection via 3-color DFS (white/gray/black)."""
     WHITE, GRAY, BLACK = 0, 1, 2
-    color = {node_id: WHITE for node_id in adjacency}
+    color = dict.fromkeys(adjacency, WHITE)
 
     def visit(node_id: str) -> bool:
         color[node_id] = GRAY

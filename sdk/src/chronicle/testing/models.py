@@ -53,7 +53,7 @@ class ChronicleAssertion:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ChronicleAssertion":
+    def from_dict(cls, data: dict[str, Any]) -> ChronicleAssertion:
         return cls(
             assertion_id=data.get("assertion_id") or str(uuid.uuid4()),
             assertion_type=data["assertion_type"],
@@ -94,7 +94,7 @@ class ChronicleTest:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ChronicleTest":
+    def from_dict(cls, data: dict[str, Any]) -> ChronicleTest:
         return cls(
             test_id=data.get("test_id") or str(uuid.uuid4()),
             name=data["name"],

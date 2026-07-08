@@ -12,16 +12,18 @@ from __future__ import annotations
 import sys
 import time
 import uuid
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Any, Iterator, Literal
+from types import FrameType
+from typing import Any, Literal
 
 from chronicle.adapters.autogen import ChronicleAutoGenHook
-from chronicle.chaos import ChaosConfig
 from chronicle.adapters.crewai import ChronicleCrewAICallbackHandler
 from chronicle.adapters.langgraph import LangGraphAdapter
 from chronicle.adapters.openai_agents import ChronicleAgentHooks
 from chronicle.adapters.pydanticai import ChronicleMiddleware
 from chronicle.adapters.semantickernel import ChronicleKernelPlugin
+from chronicle.chaos import ChaosConfig
 from chronicle.server_manager import ServerManager
 from chronicle.tracer import ChronicleTracer
 
@@ -84,7 +86,7 @@ def _resolve_module_and_attr(obj: Any) -> tuple[str | None, str | None]:
     replay registration is then simply skipped.
     """
     try:
-        frame = sys._getframe(1)
+        frame: FrameType | None = sys._getframe(1)
         while frame is not None:
             if frame.f_globals.get("__name__") != __name__:
                 for var_name, var_value in frame.f_globals.items():

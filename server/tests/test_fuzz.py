@@ -144,7 +144,15 @@ def test_fuzz_get_run_graph_with_adversarial_run_ids_never_returns_500(tmp_path,
         def run(run_id):
             encoded = urllib.parse.quote(run_id, safe="")
             response = client.get(f"/runs/{encoded}/graph")
-            assert response.status_code in (200, 404), (run_id, response.status_code, response.text)
+            # 405 is possible for a lone "." (or "..") run_id: httpx normalizes dot
+            # segments client-side per RFC 3986 before the request is ever sent, so
+            # "/runs/./graph" collapses to "/runs/graph" - which matches the
+            # DELETE-only "/runs/{run_id}" route pattern (run_id="graph") rather than
+            # this GET route, and FastAPI correctly reports 405 Method Not Allowed.
+            # That's normal REST routing behavior, not a server crash.
+            assert response.status_code in (200, 404, 405), (
+                run_id, response.status_code, response.text
+            )
 
         run()
 

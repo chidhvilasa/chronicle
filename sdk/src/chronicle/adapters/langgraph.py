@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from chronicle.chaos import ChaosConfig, ChaosMixin
@@ -19,15 +19,20 @@ from chronicle.memory_diff import json_safe_dict, record_memory_update
 from chronicle.models import StateSnapshot, TokenUsage
 from chronicle.tracer import ChronicleTracer
 
-try:
+if TYPE_CHECKING:
     from langchain_core.callbacks import BaseCallbackHandler as _BaseCallbackHandler
-except ImportError:  # pragma: no cover - exercised only without langchain installed
-    _BaseCallbackHandler = object
+else:
+    try:
+        from langchain_core.callbacks import BaseCallbackHandler as _BaseCallbackHandler
+    except ImportError:  # pragma: no cover - exercised only without langchain installed
+
+        class _BaseCallbackHandler:
+            """Stand-in used only when `langchain_core` isn't installed."""
 
 logger = logging.getLogger("chronicle")
 
 
-class LangGraphAdapter(_BaseCallbackHandler):  # type: ignore[misc]
+class LangGraphAdapter(_BaseCallbackHandler):
     """Forwards LangGraph/LangChain lifecycle callbacks to a `ChronicleTracer`."""
 
     def __init__(

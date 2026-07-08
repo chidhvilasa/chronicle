@@ -35,3 +35,17 @@ asyncio_mode = "auto"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "C4"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true

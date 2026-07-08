@@ -165,7 +165,7 @@ class ChronicleTestRunner:
     def close(self) -> None:
         self._client.close()
 
-    def __enter__(self) -> "ChronicleTestRunner":
+    def __enter__(self) -> ChronicleTestRunner:
         return self
 
     def __exit__(self, *_exc_info: object) -> None:
@@ -283,8 +283,11 @@ def _final_output(events: list[dict[str, Any]]) -> str:
 
 
 def _tool_names(events: list[dict[str, Any]]) -> set[str]:
-    return {
-        (event.get("data") or {}).get("tool_name")
-        for event in events
-        if event.get("event_type") == "tool_call" and (event.get("data") or {}).get("tool_name")
-    }
+    names: set[str] = set()
+    for event in events:
+        if event.get("event_type") != "tool_call":
+            continue
+        tool_name = (event.get("data") or {}).get("tool_name")
+        if isinstance(tool_name, str) and tool_name:
+            names.add(tool_name)
+    return names

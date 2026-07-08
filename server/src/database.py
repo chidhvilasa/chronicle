@@ -295,7 +295,7 @@ class Database:
             "UPDATE events SET event_hash = ?, chain_hash = ? WHERE event_id = ?",
             [
                 (event_hash, chain_hash, event["event_id"])
-                for event, (event_hash, chain_hash) in zip(events, chain)
+                for event, (event_hash, chain_hash) in zip(events, chain, strict=True)
             ],
         )
 
@@ -333,7 +333,9 @@ class Database:
             "FROM events WHERE run_id = ?",
             (run_id,),
         )
-        started_at, finished_at, agent_count, total_tokens, error_count = await cursor.fetchone()
+        row = await cursor.fetchone()
+        assert row is not None  # aggregate query with no GROUP BY always returns exactly one row
+        started_at, finished_at, agent_count, total_tokens, error_count = row
         status = "error" if error_count else "running"
         await self._conn.execute(
             "INSERT INTO runs (run_id, started_at, finished_at, agent_count, total_tokens, status) "
@@ -564,9 +566,9 @@ class Database:
             "SELECT COUNT(*), COALESCE(SUM(total_tokens), 0), COALESCE(SUM(estimated_cost_usd), 0), "
             "COALESCE(AVG(total_duration_ms), 0), COALESCE(SUM(error_count), 0) FROM run_metrics"
         )
-        total_runs, total_tokens, total_cost_usd, avg_run_duration_ms, total_errors = (
-            await cursor.fetchone()
-        )
+        overview_row = await cursor.fetchone()
+        assert overview_row is not None  # aggregate query with no GROUP BY always returns exactly one row
+        total_runs, total_tokens, total_cost_usd, avg_run_duration_ms, total_errors = overview_row
 
         cutoff = time.time() - 7 * 86400
         cursor = await self._conn.execute(
@@ -574,7 +576,9 @@ class Database:
             "FROM run_metrics WHERE created_at >= ?",
             (cutoff,),
         )
-        runs_last_7_days, tokens_last_7_days, cost_last_7_days = await cursor.fetchone()
+        last_7_days_row = await cursor.fetchone()
+        assert last_7_days_row is not None  # aggregate query with no GROUP BY always returns exactly one row
+        runs_last_7_days, tokens_last_7_days, cost_last_7_days = last_7_days_row
 
         cursor = await self._conn.execute(
             "SELECT run_id FROM run_metrics ORDER BY estimated_cost_usd DESC LIMIT 1"

@@ -193,7 +193,7 @@ class ChronicleTracer:
         self.flush()
         self._client.close()
 
-    def __enter__(self) -> "ChronicleTracer":
+    def __enter__(self) -> ChronicleTracer:
         return self
 
     def __exit__(self, *_exc_info: object) -> None:
