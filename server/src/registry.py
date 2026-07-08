@@ -11,7 +11,15 @@ statement would.
 from __future__ import annotations
 
 import importlib
+import re
 from typing import Any
+
+# One or more dotted segments, each starting with a letter/underscore and containing only
+# alphanumerics/underscores after that - the same shape `import a.b.c` accepts. This
+# rejects slashes, a leading dot, consecutive dots (an empty segment), and anything else
+# that isn't a plain Python dotted module path, before it ever reaches importlib.
+_MODULE_PATH_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")
+_IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 class GraphRegistrationError(Exception):
@@ -26,7 +34,23 @@ class GraphRegistry:
         self._active_name: str | None = None
 
     def register(self, graph_module: str, graph_attr: str) -> str:
-        """Imports `graph_module` and reads `graph_attr` off it; returns the registered name."""
+        """Imports `graph_module` and reads `graph_attr` off it; returns the registered name.
+
+        `graph_module` is validated against a strict dotted-identifier allowlist before
+        `importlib.import_module` ever sees it — rejecting slashes, a leading dot, or
+        `..` prevents it from being used to reach outside the normal Python module
+        namespace (e.g. relative-import escapes). `graph_attr` must be a plain identifier.
+        """
+        if not _MODULE_PATH_PATTERN.match(graph_module):
+            raise GraphRegistrationError(
+                f"Invalid graph_module {graph_module!r}: must be a dotted Python module "
+                "path (letters, digits, underscores, and single dots only)."
+            )
+        if not _IDENTIFIER_PATTERN.match(graph_attr):
+            raise GraphRegistrationError(
+                f"Invalid graph_attr {graph_attr!r}: must be a valid Python identifier."
+            )
+
         try:
             module = importlib.import_module(graph_module)
         except ImportError as exc:

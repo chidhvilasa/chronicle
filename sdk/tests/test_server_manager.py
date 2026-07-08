@@ -59,6 +59,46 @@ def test_ensure_running_spawns_and_returns_true_once_healthy(monkeypatch):
     assert manager.ensure_running() is True
 
 
+def test_ensure_running_refuses_to_spawn_when_python_executable_is_invalid(monkeypatch):
+    manager = _manager()
+    monkeypatch.setattr(manager, "is_running", MagicMock(return_value=False))
+    monkeypatch.setattr(
+        server_manager_module,
+        "_validated_python_executable",
+        MagicMock(side_effect=RuntimeError("sys.executable is not a valid file")),
+    )
+    popen = MagicMock()
+    monkeypatch.setattr(server_manager_module.subprocess, "Popen", popen)
+
+    assert manager.ensure_running() is False
+    popen.assert_not_called()
+
+
+def test_validated_python_executable_rejects_a_nonexistent_path(monkeypatch, tmp_path):
+    monkeypatch.setattr(server_manager_module.sys, "executable", str(tmp_path / "does-not-exist"))
+    with pytest.raises(RuntimeError):
+        server_manager_module._validated_python_executable()
+
+
+def test_validated_python_executable_accepts_a_path_outside_sys_prefix_if_it_exists(
+    monkeypatch, tmp_path
+):
+    """Some legitimate installs (e.g. Windows Store Python) run via a shim outside
+    sys.prefix; existence is what's checked, not location - see the function's docstring.
+    """
+    shim_python = tmp_path / "WindowsApps" / "python.exe"
+    shim_python.parent.mkdir(parents=True)
+    shim_python.write_text("shim")
+    monkeypatch.setattr(server_manager_module.sys, "executable", str(shim_python))
+
+    assert server_manager_module._validated_python_executable() == str(shim_python)
+
+
+def test_validated_python_executable_accepts_the_real_running_interpreter():
+    # sys.executable is, by construction, always inside its own prefix.
+    assert server_manager_module._validated_python_executable() == server_manager_module.sys.executable
+
+
 def test_ensure_running_returns_false_when_subprocess_cannot_spawn(monkeypatch):
     manager = _manager()
     monkeypatch.setattr(manager, "is_running", MagicMock(return_value=False))

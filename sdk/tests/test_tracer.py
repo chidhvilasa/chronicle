@@ -1,4 +1,5 @@
 import json
+import uuid
 
 import httpx
 
@@ -68,7 +69,7 @@ def test_batching_flushes_automatically_at_batch_size(tmp_path):
 
 
 def test_context_manager_flushes_on_exit(tmp_path):
-    run_id = "ctx-run"
+    run_id = str(uuid.uuid4())
     path = tmp_path / "chronicle_runs" / f"{run_id}.json"
 
     with _unreachable_tracer(tmp_path, run_id=run_id, batch_size=100) as tracer:

@@ -11,7 +11,12 @@ from typing import Any
 import httpx
 
 from chronicle.models import ChronicleEvent, EventType, StateSnapshot, TokenUsage
-from chronicle.storage import DEFAULT_LOCAL_DIR, write_local_events, write_local_snapshots
+from chronicle.storage import (
+    DEFAULT_LOCAL_DIR,
+    InvalidRunIdError,
+    write_local_events,
+    write_local_snapshots,
+)
 
 DEFAULT_SERVER_URL = "http://127.0.0.1:7823"
 DEFAULT_BATCH_SIZE = 10
@@ -85,11 +90,19 @@ class ChronicleTracer:
                 response.raise_for_status()
             except httpx.HTTPError:
                 unsent = batch[index:]
-                write_local_events(
-                    self.run_id,
-                    [e.to_dict() for e in unsent],
-                    local_dir=self.local_dir,
-                )
+                try:
+                    write_local_events(
+                        self.run_id,
+                        [e.to_dict() for e in unsent],
+                        local_dir=self.local_dir,
+                    )
+                except InvalidRunIdError:
+                    logger.warning(
+                        "Chronicle: cannot write local fallback for invalid run_id '%s'; "
+                        "%d event(s) dropped",
+                        self.run_id,
+                        len(unsent),
+                    )
                 break
 
     def record_snapshot(self, snapshot: StateSnapshot) -> threading.Thread:
@@ -110,11 +123,17 @@ class ChronicleTracer:
             response = self._client.post(f"{self.server_url}/snapshots", json=[snapshot.to_dict()])
             response.raise_for_status()
         except httpx.HTTPError:
-            with self._snapshot_write_lock:
-                write_local_snapshots(
+            try:
+                with self._snapshot_write_lock:
+                    write_local_snapshots(
+                        self.run_id,
+                        [snapshot.to_dict()],
+                        local_dir=self.local_dir,
+                    )
+            except InvalidRunIdError:
+                logger.warning(
+                    "Chronicle: cannot write local fallback snapshot for invalid run_id '%s'",
                     self.run_id,
-                    [snapshot.to_dict()],
-                    local_dir=self.local_dir,
                 )
         except Exception:  # pragma: no cover - defensive: never crash the agent
             logger.warning("Chronicle: failed to send state snapshot", exc_info=True)
