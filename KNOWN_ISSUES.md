@@ -1,5 +1,33 @@
 # Known Issues
 
+## v0.8.0 scope
+
+- **Tauri sidecar binary bundling not implemented.** The desktop app still
+  does not bundle `chronicle-server` as a real PyInstaller-built Tauri
+  sidecar (carried forward from Phase 4/v0.1.0 — see "The Chronicle server
+  is not a real bundled Tauri sidecar" under the App section below).
+  PyInstaller was evaluated for this release and found not viable on the
+  development machine (a Windows Store Python install with write
+  restrictions that block PyInstaller's build process) — this is an
+  environment constraint discovered this release, not a change in the
+  underlying plan. Instead, v0.8.0 adds
+  `app/src/components/ServerStatus.tsx`: a full-screen onboarding overlay
+  that polls `GET /health` every 3 seconds and, while the server is
+  unreachable, shows install/start instructions (`pip install
+  "chronicle-sdk[all]"`, `chronicle start`) instead of a blank or
+  confusing app. It auto-dismisses the moment the health check passes. A
+  real bundled sidecar (a compiled server binary declared via
+  `tauri.conf.json`'s `bundle.externalBin`) is planned for v1.0.
+- **Auto-updater pubkey is a placeholder.** `app/src-tauri/tauri.conf.json`
+  now declares an `app.updater` block (endpoints pointed at this repo's
+  GitHub Releases `latest.json`), but its `pubkey` is the literal string
+  `"PLACEHOLDER_REPLACE_WITH_REAL_KEY"`, not a real generated Tauri
+  updater signing key. The updater is configured but not functional as
+  shipped — installing it as-is would not let the app verify or accept
+  update signatures. This must be replaced with a real key pair (`tauri
+  signer generate`) before v1.0, and update artifacts will need to be
+  signed with the matching private key as part of the release workflow.
+
 ## v0.7.0 scope
 
 - **Memory tracking requires agents to emit `memory_update` events.
