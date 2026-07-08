@@ -1,6 +1,7 @@
 # Chronicle
 
 [![CI](https://github.com/chidhvilasa/chronicle/actions/workflows/ci.yml/badge.svg)](https://github.com/chidhvilasa/chronicle/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/chronicle-sdk.svg)](https://pypi.org/project/chronicle-sdk/)
 
 **Chronicle is the Chrome DevTools for AI agents.**
 
@@ -45,6 +46,18 @@ phase-by-phase roadmap.
 
 ```bash
 pip install chronicle-sdk
+```
+
+Install with a specific framework's optional dependencies, or all of them:
+
+```bash
+pip install "chronicle-sdk[langgraph]"
+pip install "chronicle-sdk[openai-agents]"
+pip install "chronicle-sdk[pydanticai]"
+pip install "chronicle-sdk[crewai]"
+pip install "chronicle-sdk[autogen]"
+pip install "chronicle-sdk[semantic-kernel]"
+pip install "chronicle-sdk[all]"
 ```
 
 Then in your agent file add one line:

@@ -4,12 +4,26 @@ build-backend = "hatchling.build"
 
 [project]
 name = "chronicle-sdk"
-version = "0.7.0"
+version = "0.8.0"
 description = "Python SDK for capturing and shipping AI agent traces to a Chronicle server"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "chidhvilasa" }]
+keywords = ["ai", "agents", "observability", "debugging", "langgraph", "llm", "tracing"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Debuggers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
 dependencies = [
     "httpx>=0.28.0",
     # Transitive via httpx/httpcore, pinned explicitly: h11 < 0.16.0 has a request-
@@ -18,11 +32,31 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+langgraph = ["langgraph>=0.2.0"]
+openai-agents = ["openai-agents>=0.0.3"]
+pydanticai = ["pydantic-ai>=0.0.14"]
+crewai = ["crewai>=0.70.0"]
+autogen = ["pyautogen>=0.2.0"]
+semantic-kernel = ["semantic-kernel>=1.0.0"]
+all = [
+    "langgraph>=0.2.0",
+    "openai-agents>=0.0.3",
+    "pydantic-ai>=0.0.14",
+    "crewai>=0.70.0",
+    "pyautogen>=0.2.0",
+    "semantic-kernel>=1.0.0",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "hypothesis>=6.100.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/chidhvilasa/chronicle"
+Repository = "https://github.com/chidhvilasa/chronicle"
+Issues = "https://github.com/chidhvilasa/chronicle/issues"
+Changelog = "https://github.com/chidhvilasa/chronicle/blob/main/CHANGELOG.md"
 
 [project.scripts]
 chronicle = "chronicle.cli:main"
