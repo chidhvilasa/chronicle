@@ -1,6 +1,6 @@
 [package]
 name = "chronicle"
-version = "0.7.0"
+version = "0.8.0"
 description = "Chronicle desktop app: the Chrome DevTools for AI agents"
 authors = ["chidhvilasa"]
 edition = "2021"
@@ -20,6 +20,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
+tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

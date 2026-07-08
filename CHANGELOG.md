@@ -6,6 +6,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-07-08
+
+### Security
+
+- SQL injection hardening on all query parameters
+- Path traversal prevention in POST /register
+- Payload size limits (1000 events max, 1MB per event)
+- JSON depth limit (20 levels max)
+- Integer overflow clamping on token and latency fields
+- Timestamp validation (reject >1hr future, >30d past)
+- Replay depth limit (max 3 levels deep)
+- SDK run_id UUID validation for local file writes
+- Module path allowlist for graph registration
+
+### Added
+
+- SHA-256 trace integrity chain hashing
+- `chronicle verify` CLI command
+- PyPI publishing GitHub Actions workflow
+- `chronicle-sdk` optional dependency groups per framework
+- Hypothesis fuzz tests for all public parsers
+- Performance stress tests with 7 defined thresholds
+- SQLite composite indexes for all hot query paths
+- Server onboarding screen in desktop app
+
+### Fixed
+
+- Replay engine 10 adversarial scenarios
+
+### Docs
+
+- SECURITY_AUDIT.md, THREAT_MODEL.md, PERFORMANCE.md, RELEASE_CHECKLIST.md
+
 ## [0.7.0] - 2026-07-08
 
 ### Added

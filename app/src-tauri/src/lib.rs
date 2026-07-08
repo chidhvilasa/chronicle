@@ -105,6 +105,7 @@ fn stop_chronicle_server(state: State<ServerState>) -> Result<(), String> {
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(ServerState::new())
         .invoke_handler(tauri::generate_handler![start_chronicle_server, stop_chronicle_server])
         .setup(|app| {
