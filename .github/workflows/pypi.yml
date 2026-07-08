@@ -1,4 +1,4 @@
-name: Publish chronicle-sdk to PyPI
+name: Publish chronicle-agent-sdk to PyPI
 
 on:
   release:
@@ -6,7 +6,7 @@ on:
 
 jobs:
   build-and-publish:
-    name: Build and publish chronicle-sdk
+    name: Build and publish chronicle-agent-sdk
     runs-on: ubuntu-latest
     environment: pypi
     permissions:

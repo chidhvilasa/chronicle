@@ -1,7 +1,7 @@
 # Chronicle
 
 [![CI](https://github.com/chidhvilasa/chronicle/actions/workflows/ci.yml/badge.svg)](https://github.com/chidhvilasa/chronicle/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/chronicle-sdk.svg)](https://pypi.org/project/chronicle-sdk/)
+[![PyPI](https://img.shields.io/pypi/v/chronicle-agent-sdk.svg)](https://pypi.org/project/chronicle-agent-sdk/)
 
 **Chronicle is the Chrome DevTools for AI agents.**
 
@@ -29,7 +29,7 @@ update, error, and retry in a desktop app.
                          └──────────────┘
 ```
 
-- **`/sdk`** — `chronicle-sdk`, a Python package agents import to emit trace
+- **`/sdk`** — `chronicle-agent-sdk`, a Python package agents import to emit trace
   events. Buffers and ships events to the local Chronicle server over HTTP in
   batches; falls back to writing unsent events to
   `chronicle_runs/{run_id}.json` if the server isn't running.
@@ -45,19 +45,19 @@ phase-by-phase roadmap.
 ## Quickstart
 
 ```bash
-pip install chronicle-sdk
+pip install chronicle-agent-sdk
 ```
 
 Install with a specific framework's optional dependencies, or all of them:
 
 ```bash
-pip install "chronicle-sdk[langgraph]"
-pip install "chronicle-sdk[openai-agents]"
-pip install "chronicle-sdk[pydanticai]"
-pip install "chronicle-sdk[crewai]"
-pip install "chronicle-sdk[autogen]"
-pip install "chronicle-sdk[semantic-kernel]"
-pip install "chronicle-sdk[all]"
+pip install "chronicle-agent-sdk[langgraph]"
+pip install "chronicle-agent-sdk[openai-agents]"
+pip install "chronicle-agent-sdk[pydanticai]"
+pip install "chronicle-agent-sdk[crewai]"
+pip install "chronicle-agent-sdk[autogen]"
+pip install "chronicle-agent-sdk[semantic-kernel]"
+pip install "chronicle-agent-sdk[all]"
 ```
 
 Then in your agent file add one line:
@@ -116,7 +116,7 @@ npm run tauri dev
 ## Download
 
 Chronicle desktop app builds for Windows (x64), macOS (x64 + arm64), and
-Linux (x64), plus the `chronicle-sdk` Python wheel, are published on the
+Linux (x64), plus the `chronicle-agent-sdk` Python wheel, are published on the
 [v0.1.0 release](https://github.com/chidhvilasa/chronicle/releases/tag/v0.1.0).
 
 ## Project status

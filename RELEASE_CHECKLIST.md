@@ -73,7 +73,7 @@ After this one-time setup, every subsequent release publishes automatically:
    - `pypi.yml` → builds and uploads `chronicle-sdk` to PyPI.
    - `release.yml` → builds the desktop app installers (see that workflow
      for the Tauri sidecar/auto-updater signing requirements).
-7. **Verify the publish**: `pip install chronicle-sdk==X.Y.Z` in a clean
+7. **Verify the publish**: `pip install chronicle-agent-sdk==X.Y.Z` in a clean
    virtualenv and confirm `chronicle --help` works and `chronicle.__version__`
    matches.
 8. **Smoke-test the desktop app installer** on at least one platform before

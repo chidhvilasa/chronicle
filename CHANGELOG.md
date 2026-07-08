@@ -245,7 +245,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   response, tool calls (via `ToolCallPart` introspection), token usage,
   duration, and errors as one `llm_call`/`error` event per call. Async
   `run`/`run_stream` pass through unwrapped (see `KNOWN_ISSUES.md`).
-- README: quickstart reduced to `pip install chronicle-sdk` +
+- README: quickstart reduced to `pip install chronicle-agent-sdk` +
   `chronicle.instrument(graph)`; added a Framework support table
   (LangGraph/OpenAI Agents SDK/PydanticAI supported, CrewAI/AutoGen
   planned for v0.4.0).
