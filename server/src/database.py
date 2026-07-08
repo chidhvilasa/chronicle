@@ -142,10 +142,18 @@ CREATE TABLE IF NOT EXISTS run_metrics (
 CREATE INDEX IF NOT EXISTS idx_runs_run_id ON runs (run_id);
 CREATE INDEX IF NOT EXISTS idx_events_run_id ON events (run_id);
 CREATE INDEX IF NOT EXISTS idx_events_event_type ON events (event_type);
+-- Composite: covers "WHERE run_id = ? ORDER BY timestamp ASC" (list_events,
+-- list_events_with_hashes, timeline/graph building, hash-chain recompute) in a
+-- single index scan instead of a filter + separate sort.
+CREATE INDEX IF NOT EXISTS idx_events_run_id_timestamp ON events (run_id, timestamp);
 CREATE INDEX IF NOT EXISTS idx_snapshots_run_id ON snapshots (run_id);
 CREATE INDEX IF NOT EXISTS idx_snapshots_step_index ON snapshots (step_index);
+-- Composite: covers "WHERE run_id = ? ORDER BY step_index ASC" (list_snapshots_summary).
+CREATE INDEX IF NOT EXISTS idx_snapshots_run_id_step_index ON snapshots (run_id, step_index);
 CREATE INDEX IF NOT EXISTS idx_tests_created_at ON tests (created_at);
 CREATE INDEX IF NOT EXISTS idx_test_results_test_id ON test_results (test_id);
+-- Composite: covers "WHERE test_id = ? ORDER BY created_at DESC LIMIT ?" (list_test_results).
+CREATE INDEX IF NOT EXISTS idx_test_results_test_id_created_at ON test_results (test_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_run_metrics_created_at ON run_metrics (created_at);
 CREATE INDEX IF NOT EXISTS idx_run_metrics_framework ON run_metrics (framework);
 """
