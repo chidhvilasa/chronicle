@@ -199,8 +199,12 @@ def evaluate_assertion(assertion: ChronicleAssertion, events: list[dict[str, Any
         reason = f"final output {'does not contain' if passed else 'contains'} {target!r}"
     elif assertion_type == "output_matches_regex":
         output = _final_output(scoped)
-        passed = re.search(target, output) is not None
-        reason = f"final output {'matches' if passed else 'does not match'} regex {target!r}"
+        try:
+            passed = re.search(target, output) is not None
+            reason = f"final output {'matches' if passed else 'does not match'} regex {target!r}"
+        except re.error as exc:
+            passed = False
+            reason = f"{target!r} is not a valid regex: {exc}"
     elif assertion_type == "tool_called":
         called = _tool_names(scoped)
         passed = target in called
@@ -212,14 +216,22 @@ def evaluate_assertion(assertion: ChronicleAssertion, events: list[dict[str, Any
     elif assertion_type == "token_count_under":
         usage = total_token_usage(scoped)
         total = (usage["input_tokens"] or 0) + (usage["output_tokens"] or 0)
-        limit = int(target)
-        passed = total < limit
-        reason = f"total tokens {total} {'is under' if passed else 'is not under'} {limit}"
+        try:
+            limit = int(target)
+            passed = total < limit
+            reason = f"total tokens {total} {'is under' if passed else 'is not under'} {limit}"
+        except ValueError:
+            passed = False
+            reason = f"{target!r} is not a valid integer token limit"
     elif assertion_type == "latency_under_ms":
         duration = total_duration_ms(scoped)
-        limit = int(target)
-        passed = duration < limit
-        reason = f"duration {duration:.0f}ms {'is under' if passed else 'is not under'} {limit}ms"
+        try:
+            limit = int(target)
+            passed = duration < limit
+            reason = f"duration {duration:.0f}ms {'is under' if passed else 'is not under'} {limit}ms"
+        except ValueError:
+            passed = False
+            reason = f"{target!r} is not a valid integer millisecond limit"
     elif assertion_type == "no_errors":
         error_count = sum(1 for e in scoped if e.get("event_type") == "error")
         passed = error_count == 0
